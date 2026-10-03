@@ -1,0 +1,32 @@
+diff --git a/Makefile.libretro b/Makefile.libretro
+index cd53109..fdeb924 100644
+--- a/Makefile.libretro
++++ b/Makefile.libretro
+@@ -596,6 +596,27 @@ else ifeq ($(platform), miyoo)
+ 	BUILTIN_GPU = unai
+ 	DYNAREC = ari64
+ 
++# Mishrin Console: freestanding WebAssembly (clang --target=wasm32-wasi), no Emscripten runtime
++else ifeq ($(platform), mishrin-wasi)
++   TARGET  := $(TARGET_NAME)_libretro_wasi.a
++   NO_MMAP = 1
++   USE_MINIZ = 1
++   CFLAGS_OPT = -O3
++   CFLAGS += -DNO_DYLIB -DNO_SOCKET -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_PROCESS_CLOCKS
++   CFLAGS += -msimd128 -mbulk-memory -mnontrapping-fptoint -msign-ext -ftree-vectorize
++   LIBPTHREAD :=
++   LIBDL :=
++   BUILTIN_GPU = unai
++   USE_RTHREADS=0
++   USE_ASYNC_CDROM=0
++   USE_ASYNC_GPU=0
++   USE_ASYNC_SPU=0
++   NDRC_THREAD=0
++   DYNAREC =
++   STATIC_LINKING = 1
++   HAVE_PHYSICAL_CDROM = 0
++   USE_LIBRETRO_VFS = 0
++
+ # Emscripten
+ else ifeq ($(platform), emscripten)
+    TARGET  := $(TARGET_NAME)_libretro_$(platform).bc

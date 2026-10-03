@@ -1,0 +1,30 @@
+{
+  "name": "mishrin-console",
+  "version": "1.0.0",
+  "description": "MISHRIN CONSOLE \u2014 browser game console powered by the Mishrin Paradoxical Computer (MPC)",
+  "scripts": {
+    "build:games": "clang --target=wasm32 -Os -msimd128 -mbulk-memory -nostdlib -ffreestanding -Wl,--no-entry -Wl,--strip-all -Wl,--export-memory -o public/games/ember-drift/ember-drift.wasm games-src/ember-drift.c && node scripts/hash-catalog.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/size-report.mjs",
+    "preview": "vite preview --port 4173",
+    "cloud": "node server/broker.mjs",
+    "test": "npm run test:unit && npm run test:emu && npm run test:scheduler && python3 tests/e2e.py",
+    "test:unit": "esbuild tests/unit.test.ts --bundle --platform=node --format=esm --log-level=warning | node --input-type=module",
+    "build:p1": "sh emulators/p1/build-core.sh",
+    "test:emu-unit": "esbuild tests/emu/unit.test.ts --bundle --platform=node --format=esm --log-level=warning | node --input-type=module",
+    "test:emu-core": "esbuild tests/emu/core.test.ts --bundle --platform=node --format=esm --log-level=warning | node --input-type=module",
+    "test:emu": "npm run test:emu-unit && npm run test:emu-core",
+    "test:emu-browser": "python3 tests/emu/e2e_emu.py",
+    "test:scheduler": "node tests/cloud/scheduler.test.mjs",
+    "test:worker": "sudo /usr/bin/python3.12 tests/cloud/test_worker.py",
+    "test:windows": "sudo python3 tests/cloud/e2e_windows.py"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.3",
+    "wabt": "^1.0.39"
+  },
+  "private": true,
+  "type": "module"
+}

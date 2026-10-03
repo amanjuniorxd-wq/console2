@@ -1,0 +1,26 @@
+{
+ "type": "windows",
+ "runtime": "wine",
+ "network": false,
+ "display": {
+  "width": 640,
+  "height": 360
+ },
+ "controllerMap": {
+  "a": "Return",
+  "start": "Return"
+ },
+ "id": "mishrin-d3d9",
+ "title": "Mishrin D3D9 Test (32-bit)",
+ "executable": "d3d9test32.exe",
+ "workingDirectory": "",
+ "graphics": "dxvk",
+ "arch": "x86",
+ "requirements": {
+  "ram": 1024,
+  "gpu": true,
+  "cpus": 1,
+  "storageMB": 512,
+  "maxMinutes": 30
+ }
+}

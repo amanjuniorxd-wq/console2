@@ -1,0 +1,143 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mishrin Cloud Node</title></head>
+<body style="background:#000;color:#ff8a00;font:13px monospace">
+<pre id="log">Mishrin cloud node (reference: MPC Framebuffer ABI runtime)</pre>
+<script type="module">
+// Reference compatibility node. Runs MPC WASM titles in an isolated page and streams them over WebRTC.
+// A Windows/Linux node implements the same broker protocol with a native capture pipeline
+// (e.g. Wine/Proton or a container + GStreamer webrtcbin); see server/PROTOCOL.md.
+const BROKER = new URLSearchParams(location.search).get('broker') || location.origin;
+const CAPACITY = +(new URLSearchParams(location.search).get('capacity') || 4);
+const log = m => { const l = document.getElementById('log'); l.textContent += '\n' + new Date().toISOString().slice(11, 19) + ' ' + m; };
+const sessions = new Map();
+
+async function hash(buf) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+
+async function fetchPackage(game) {
+  if (game.cas) {
+    const r = await fetch(`${BROKER}/v1/packages/${game.cas}`);
+    if (r.ok) { const b = await r.arrayBuffer(); if (await hash(b) === game.cas) return b; }
+  }
+  if (game.url && /^https?:/.test(game.url)) {
+    const r = await fetch(game.url); if (!r.ok) throw new Error('package download failed');
+    return r.arrayBuffer();
+  }
+  throw new Error('package unavailable');
+}
+
+function runGame(module, outH) {
+  const x = new WebAssembly.Instance(module, {}).exports; // import-free sandbox
+  x.mpc_init((Math.random() * 2 ** 31) | 0);
+  const w = x.mpc_width(), h = x.mpc_height();
+  const src = new OffscreenCanvas(w, h), sctx = src.getContext('2d');
+  const out = document.createElement('canvas');
+  const ctx = out.getContext('2d', { alpha: false });
+  const size = hh => { const k = Math.max(1, Math.round(hh / h)); out.width = w * k; out.height = h * k; ctx.imageSmoothingEnabled = false; };
+  size(outH);
+  let paused = false, stopped = false, last = performance.now();
+  const loop = t => {
+    if (stopped) return;
+    requestAnimationFrame(loop);
+    const dt = t - last; last = t;
+    if (paused) return;
+    const ptr = x.mpc_frame(dt);
+    sctx.putImageData(new ImageData(new Uint8ClampedArray(x.memory.buffer, ptr, w * h * 4), w, h), 0, 0);
+    ctx.drawImage(src, 0, 0, out.width, out.height);
+  };
+  requestAnimationFrame(loop);
+  const canSave = typeof x.mpc_state_ptr === 'function';
+  return {
+    canvas: out, canSave, size,
+    input: (b, d) => x.mpc_input(b, d),
+    pointer: (nx, ny, b) => x.mpc_pointer?.(Math.round(nx * (w - 1)), Math.round(ny * (h - 1)), b & 7),
+    pause: on => (paused = on),
+    save: () => new Uint8Array(x.memory.buffer, x.mpc_state_ptr(), x.mpc_state_size()).slice(),
+    load: d => { if (d.length !== x.mpc_state_size()) return false; new Uint8Array(x.memory.buffer, x.mpc_state_ptr(), d.length).set(d); return true; },
+    stop: () => (stopped = true),
+  };
+}
+
+async function startSession(msg) {
+  const { id, game, offer, prefs, iceServers } = msg;
+  try {
+    if (game.runtime !== 'wasm') throw new Error(`runtime ${game.runtime} not supported on this node`);
+    const bytes = await fetchPackage(game);
+    if (!WebAssembly.validate(bytes)) throw new Error('invalid module');
+    const mod = await WebAssembly.compile(bytes);
+    if (WebAssembly.Module.imports(mod).length) throw new Error('module requests imports');
+    const g = runGame(mod, Math.min(prefs.height || 720, 1080));
+    const stream = g.canvas.captureStream(prefs.fps || 60);
+    const pc = new RTCPeerConnection({ iceServers });
+    await pc.setRemoteDescription({ type: 'offer', sdp: offer });
+    const [videoTx] = pc.getTransceivers().filter(t => t.receiver.track.kind === 'video');
+    videoTx.direction = 'sendonly';
+    await videoTx.sender.replaceTrack(stream.getVideoTracks()[0]);
+    const tune = async q => {
+      const p = videoTx.sender.getParameters(); p.encodings ??= [{}]; if (!p.encodings.length) p.encodings.push({});
+      p.encodings[0].maxBitrate = (q.kbps || 8000) * 1000; p.encodings[0].maxFramerate = q.fps || 60;
+      p.degradationPreference = 'maintain-framerate';
+      try { await videoTx.sender.setParameters(p); } catch {}
+      if (q.height) g.size(Math.min(q.height, 1080));
+    };
+    const s = { pc, g, ctl: null }; sessions.set(id, s);
+    pc.ondatachannel = ({ channel }) => {
+      if (channel.label === 'input') {
+        channel.binaryType = 'arraybuffer';
+        channel.onmessage = e => {
+          if (typeof e.data === 'string') return; // raw keys: not used by ABI titles
+          const v = new Uint8Array(e.data);
+          if (v[0] === 1 || v[0] === 3) g.input(v[1], v[2]); // keyboard-derived or controller/touch button
+          else if (v[0] === 2 && v.length >= 6) { const d = new DataView(e.data); g.pointer(d.getUint16(2) / 65535, d.getUint16(4) / 65535, v[1]); } // mouse
+        };
+      } else if (channel.label === 'ctl') {
+        s.ctl = channel;
+        const hello = () => channel.send(JSON.stringify({ t: 'caps', save: g.canSave }));
+        if (channel.readyState === 'open') hello(); else channel.onopen = hello;
+        channel.onmessage = e => {
+          const m = JSON.parse(e.data);
+          if (m.t === 'quality') tune(m);
+          else if (m.t === 'pause') g.pause(!!m.on);
+          else if (m.t === 'save') { const d = g.save(); let bin = ''; d.forEach(b => (bin += String.fromCharCode(b))); channel.send(JSON.stringify({ t: 'saved', id: m.id, data: btoa(bin) })); }
+          else if (m.t === 'load') { const d = Uint8Array.from(atob(m.data), c => c.charCodeAt(0)); channel.send(JSON.stringify({ t: 'loaded', id: m.id, ok: g.load(d) })); }
+        };
+      }
+    };
+    pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc.connectionState)) stop(id, 'connection ' + pc.connectionState); };
+    await pc.setLocalDescription(await pc.createAnswer());
+    await new Promise(r => { if (pc.iceGatheringState === 'complete') return r(); const t = setTimeout(r, 2000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); r(); } }; });
+    await tune(prefs);
+    await post('answer', { id, sdp: pc.localDescription.sdp });
+    log(`session ${id.slice(0, 8)} started: ${game.title}`);
+  } catch (e) {
+    log(`session ${id.slice(0, 8)} failed: ${e.message}`);
+    await post('answer', { id, error: e.message });
+    sessions.delete(id);
+  }
+}
+function stop(id, why) {
+  const s = sessions.get(id); if (!s) return;
+  sessions.delete(id);
+  try { s.ctl?.send(JSON.stringify({ t: 'end', reason: why === 'idle' ? 'Closed after inactivity.' : 'Cloud session ended.' })); } catch {}
+  s.g.stop(); s.pc.close();
+  post('ended', { id });
+  log(`session ${id.slice(0, 8)} ended (${why})`);
+}
+
+let hostId;
+const post = (what, body) => fetch(`${BROKER}/v1/hosts/${hostId}/${what}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+async function main() {
+  for (;;) {
+    try {
+      if (!hostId) { const r = await fetch(`${BROKER}/v1/hosts/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runtimes: ['wasm'], capacity: CAPACITY }) }); hostId = (await r.json()).id; log('registered ' + hostId.slice(0, 8)); window.__nodeReady = true; }
+      const r = await fetch(`${BROKER}/v1/hosts/${hostId}/poll`);
+      if (r.status === 404) { hostId = null; continue; }
+      if (r.status !== 200) continue;
+      const m = await r.json();
+      if (m.type === 'session') startSession(m);
+      else if (m.type === 'end') stop(m.id, m.reason);
+    } catch { await new Promise(r => setTimeout(r, 2000)); }
+  }
+}
+addEventListener('pagehide', () => { if (hostId) navigator.sendBeacon(`${BROKER}/v1/hosts/${hostId}/bye`, '{}'); });
+main();
+</script></body></html>

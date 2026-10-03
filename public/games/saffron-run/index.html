@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Saffron Run</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none}canvas{width:100%;height:100%;display:block}</style>
+</head><body><canvas id="c"></canvas>
+<script>
+/* SAFFRON RUN — original demo game (HTML5 package). Three-lane runner.
+   Supports the Mishrin web-package protocol via postMessage:
+   {mpc:'save'} -> replies {mpc:'state',data}; {mpc:'load',data}; {mpc:'pause',on} */
+const c=document.getElementById('c'),x=c.getContext('2d');
+let W=0,H=0,dpr=1;
+function fit(){dpr=Math.min(devicePixelRatio||1,2);W=c.width=innerWidth*dpr|0;H=c.height=innerHeight*dpr|0}
+addEventListener('resize',fit);fit();
+let S;function reset(){S={lane:1,pos:1,obs:[],gems:[],speed:.55,dist:0,score:0,over:false,spawn:0,seed:(Math.random()*1e9)|0,best:S?S.best:0}}reset();
+function r(){S.seed^=S.seed<<13;S.seed^=S.seed>>>17;S.seed^=S.seed<<5;return ((S.seed>>>0)%10000)/10000}
+let paused=false;
+function move(d){if(S.over){reset();return}S.lane=Math.max(0,Math.min(2,S.lane+d))}
+addEventListener('keydown',e=>{if(e.repeat)return;if(e.key==='ArrowLeft'||e.key==='a')move(-1);else if(e.key==='ArrowRight'||e.key==='d')move(1);else if((e.key===' '||e.key==='Enter')&&S.over)reset()});
+addEventListener('pointerdown',e=>move(e.clientX<innerWidth/2?-1:1));
+let gpPrev=[];function pollPad(){const p=navigator.getGamepads?[...navigator.getGamepads()].find(Boolean):null;if(!p)return;const b=i=>p.buttons[i]&&p.buttons[i].pressed;const now=[b(14)||p.axes[0]<-.5,b(15)||p.axes[0]>.5,b(0)];if(now[0]&&!gpPrev[0])move(-1);if(now[1]&&!gpPrev[1])move(1);if(now[2]&&!gpPrev[2]&&S.over)reset();gpPrev=now}
+addEventListener('message',e=>{const m=e.data||{};if(m.mpc==='save')parent.postMessage({mpc:'state',data:JSON.stringify(S)},'*');else if(m.mpc==='load'){try{S=JSON.parse(m.data)}catch{}}else if(m.mpc==='pause')paused=!!m.on});
+parent.postMessage({mpc:'ready',caps:['save','pause']},'*');
+let last=performance.now();
+function frame(t){const dt=Math.min(50,t-last);last=t;pollPad();if(!paused&&!S.over)step(dt);draw();requestAnimationFrame(frame)}
+function step(dt){S.pos+=(S.lane-S.pos)*Math.min(1,dt*.02);S.speed+=dt*.000004;S.dist+=dt*S.speed;S.spawn-=dt*S.speed;
+ if(S.spawn<=0){const l=(r()*3)|0;S.obs.push({l,z:1});if(r()<.6)S.gems.push({l:(l+1+((r()*2)|0))%3,z:1});S.spawn=260+r()*240}
+ const dz=dt*S.speed*.0016;for(const o of S.obs)o.z-=dz;for(const g of S.gems)g.z-=dz;
+ for(const o of S.obs)if(o.z<.06&&o.z>-.02&&o.l===S.lane){S.over=true;S.best=Math.max(S.best,S.score)}
+ S.gems=S.gems.filter(g=>{if(g.z<.06&&g.z>-.02&&g.l===S.lane){S.score+=10;return false}return g.z>-.1});
+ S.obs=S.obs.filter(o=>o.z>-.1);S.score+=dt*.004*S.speed|0}
+function proj(lane,z){const hz=H*.38,y=hz+(H-hz)*(1-z)**2.2,sc=(y-hz)/(H-hz),cx=W/2+(lane-1)*W*.28*sc;return[cx,y,sc]}
+function draw(){const hz=H*.38,g=x.createLinearGradient(0,0,0,hz);g.addColorStop(0,'#090304');g.addColorStop(1,'#5a1e00');x.fillStyle=g;x.fillRect(0,0,W,hz);
+ x.fillStyle='#ff8a00';x.beginPath();x.arc(W/2,hz,H*.14,Math.PI,0);x.fill();
+ x.fillStyle='#120806';x.fillRect(0,hz,W,H-hz);
+ x.strokeStyle='rgba(255,138,0,.55)';x.lineWidth=2*dpr;for(const l of[-.5,.5,1.5,2.5]){const[a,b]=proj(l,1),[c2,d]=proj(l,0);x.beginPath();x.moveTo(a,b);x.lineTo(c2,d);x.stroke()}
+ const off=(S.dist*.004)%1;x.strokeStyle='rgba(212,175,55,.25)';for(let i=0;i<10;i++){const z=1-((i/10+off)%1);const[, y]=proj(1,z);x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke()}
+ const items=[...S.obs.map(o=>({...o,t:0})),...S.gems.map(o=>({...o,t:1}))].sort((a,b)=>b.z-a.z);
+ for(const it of items){if(it.z>1||it.z<-.1)continue;const[px,py,sc]=proj(it.l,it.z);const s=W*.09*sc;if(it.t){x.fillStyle='#ffd27a';x.beginPath();x.moveTo(px,py-s);x.lineTo(px+s*.5,py-s*.5);x.lineTo(px,py);x.lineTo(px-s*.5,py-s*.5);x.fill()}else{x.fillStyle='#2b1d1a';x.fillRect(px-s*.6,py-s,s*1.2,s);x.strokeStyle='#ff8a00';x.strokeRect(px-s*.6,py-s,s*1.2,s)}}
+ const[ppx,ppy]=proj(S.pos,0.02);const ps=W*.05;x.fillStyle='#ff8a00';x.shadowColor='#ff8a00';x.shadowBlur=20*dpr;x.beginPath();x.moveTo(ppx,ppy-ps*1.4);x.lineTo(ppx+ps*.7,ppy);x.lineTo(ppx-ps*.7,ppy);x.fill();x.shadowBlur=0;
+ x.fillStyle='#fff';x.font=`600 ${18*dpr}px system-ui,sans-serif`;x.fillText('SCORE '+S.score,16*dpr,30*dpr);x.fillStyle='#d4af37';x.fillText('BEST '+S.best,16*dpr,54*dpr);
+ if(S.over){x.fillStyle='rgba(0,0,0,.6)';x.fillRect(0,0,W,H);x.textAlign='center';x.fillStyle='#ff8a00';x.font=`700 ${42*dpr}px system-ui,sans-serif`;x.fillText('RUN OVER',W/2,H/2);x.fillStyle='#fff';x.font=`500 ${16*dpr}px system-ui,sans-serif`;x.fillText('Press A / Enter / tap to run again',W/2,H/2+36*dpr);x.textAlign='left'}}
+requestAnimationFrame(frame);
+</script></body></html>

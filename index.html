@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050505">
+<meta name="description" content="MISHRIN CONSOLE — Games Beyond Limits.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https: http: ws: wss:; frame-src 'self' https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Mishrin Console</title>
+<style>
+  /* Critical boot CSS: the splash paints before any JS loads. */
+  html,body{margin:0;height:100%;background:#050505}
+  #boot{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:#000;color:#fff;font:600 12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;transition:opacity .35s ease}
+  #boot svg{width:112px;height:112px;color:#ff8a00;filter:drop-shadow(0 0 14px rgba(255,138,0,.85));opacity:0;animation:om 1s .1s ease-out forwards}
+  #boot h1{margin:0;font-size:20px;letter-spacing:.42em;font-weight:700;opacity:0;animation:fade .6s .45s forwards}
+  #boot .ld{width:180px;height:2px;background:#22160d;overflow:hidden;border-radius:2px;opacity:0;animation:fade .4s .6s forwards}
+  #boot .ld i{display:block;width:35%;height:100%;background:linear-gradient(90deg,#d4af37,#ff8a00);animation:ld 1s linear infinite}
+  #boot p{margin:0;color:#d4af37;letter-spacing:.3em;font-size:10px;opacity:0;animation:fade .6s .7s forwards;text-align:center;padding:0 16px}
+  #boot.out{opacity:0;pointer-events:none}
+  @keyframes om{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+  @keyframes fade{to{opacity:1}}
+  @keyframes ld{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+  @media (prefers-reduced-motion:reduce){#boot *{animation-duration:.01s!important;animation-delay:0s!important}}
+</style>
+<script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+<div id="boot" role="status" aria-label="Loading Mishrin Console">
+  <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/><path d="M27 38c10-9 24-4 20 6-2 5-8 7-12 7 9 0 17 4 15 13-2 9-14 11-21 5" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M47 52c8-6 20-4 22 6 2 9-5 16-12 14" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M69 58c4-8 10-12 14-11" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M50 30c6 6 18 6 24 0" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="62" cy="20" r="4" fill="currentColor"/></svg>
+  <h1>MISHRIN CONSOLE</h1>
+  <div class="ld"><i></i></div>
+  <p>POWERED BY MISHRIN PARADOXICAL COMPUTER</p>
+</div>
+<div id="app" hidden></div>
+<div id="player" hidden></div>
+<noscript><p style="color:#fff;text-align:center;padding:40px">Mishrin Console needs JavaScript.</p></noscript>
+</body>
+</html>
