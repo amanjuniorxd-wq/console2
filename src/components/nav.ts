@@ -3,17 +3,21 @@
  * LB/RB = switch sections. Gamepad polling runs only while a pad is connected (no idle rAF).
  */
 import { Btn } from '../runtime/types';
+import { onPad, pads, type PadState } from '../input/gamepad';
+import { FB, LOGICAL_FROM_FULL } from '../input/pad';
 
 type PadHandler = (b: Btn, down: boolean) => void;
+type FullHandler = (full: number) => void;
 type Dir = 'up' | 'down' | 'left' | 'right';
 
 const root = document.documentElement;
 const backStack: (() => void)[] = [];
 let padHandler: PadHandler | null = null;
+let fullHandler: FullHandler | null = null;
 let overlayToggle: (() => void) | null = null;
 let sectionStep: ((d: 1 | -1) => void) | null = null;
 let padEnabled = true;
-export function setPadEnabled(on: boolean) { padEnabled = on; if (on) startPoll(); }
+export function setPadEnabled(on: boolean) { padEnabled = on; }
 
 export const setInputMode = (m: string) => { if (root.dataset.input !== m) root.dataset.input = m; };
 
@@ -28,7 +32,7 @@ export function back(): void {
 }
 
 /** While a game is running, pad buttons go to the session instead of the UI. */
-export function capturePad(h: PadHandler | null, toggleOverlay: (() => void) | null = null) { padHandler = h; overlayToggle = toggleOverlay; }
+export function capturePad(h: PadHandler | null, toggleOverlay: (() => void) | null = null, full: FullHandler | null = null) { padHandler = h; overlayToggle = toggleOverlay; fullHandler = full; lastFull = -1; }
 export function onSection(f: (d: 1 | -1) => void) { sectionStep = f; }
 
 const SEL = 'button:not([disabled]),a[href],input:not([disabled]),[tabindex="0"]';
@@ -90,52 +94,42 @@ function onKey(e: KeyboardEvent): void {
   if ((e.key === 'q' || e.key === 'e') && !typing && !e.ctrlKey && !e.metaKey) sectionStep?.(e.key === 'e' ? 1 : -1);
 }
 
-// ---- gamepad -------------------------------------------------------------------------
-let polling = false;
-let prev: boolean[] = [];
+// ---- gamepad (shared poller: src/input/gamepad.ts) ---------------------------------------
+let prevFull = 0, prevHome = false, prevSel = false, prevStart = false, lastFull = -1;
 const held: Record<string, number> = {};
-const MAP: [number, Btn][] = [[12, Btn.Up], [13, Btn.Down], [14, Btn.Left], [15, Btn.Right], [0, Btn.A], [1, Btn.B], [9, Btn.Start]];
+const DIRS: [Dir, number][] = [['up', FB.up], ['down', FB.down], ['left', FB.left], ['right', FB.right]];
 
-function pads(): Gamepad[] { return navigator.getGamepads ? ([...navigator.getGamepads()].filter(Boolean) as Gamepad[]) : []; }
-
-function poll(t: number): void {
-  const list = pads();
-  if (!list.length || !padEnabled) { polling = false; prev = []; return; }
-  requestAnimationFrame(poll);
-  const p = list[0];
-  const btn = (i: number) => !!p.buttons[i]?.pressed;
-  const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
-  const now: boolean[] = [];
-  for (let i = 0; i < p.buttons.length; i++) now[i] = btn(i);
-  // stick → d-pad
-  now[12] ||= ay < -0.5; now[13] ||= ay > 0.5; now[14] ||= ax < -0.5; now[15] ||= ax > 0.5;
-  const pressed = (i: number) => now[i] && !prev[i];
-  if (now.some(Boolean)) setInputMode('pad');
-
-  if (padHandler) {
-    for (const [i, b] of MAP) if (now[i] !== !!prev[i]) padHandler(b, now[i]);
-    if (pressed(16) || (now[8] && pressed(9)) || (now[9] && pressed(8))) overlayToggle?.();
+function onPadState({ full, home }: PadState): void {
+  if (!padEnabled) { prevFull = full; return; }
+  const t = performance.now();
+  const is = (bit: number) => !!(full & (1 << bit)), was = (bit: number) => !!(prevFull & (1 << bit));
+  const pressed = (bit: number) => is(bit) && !was(bit);
+  if (full || home) setInputMode('pad');
+  const sel = is(FB.select), start = is(FB.start);
+  const menuCombo = (sel && start && !(prevSel && prevStart));
+  if (padHandler || fullHandler) {
+    if (fullHandler) { if (full !== lastFull) { lastFull = full; fullHandler(full); } }
+    else for (const [f, b] of LOGICAL_FROM_FULL) if (is(FB[f]) !== was(FB[f])) padHandler!(b, is(FB[f]));
+    if ((home && !prevHome) || menuCombo) overlayToggle?.();
   } else {
-    const dirs: [number, Dir][] = [[12, 'up'], [13, 'down'], [14, 'left'], [15, 'right']];
-    for (const [i, d] of dirs) {
-      if (pressed(i)) { move(d); held[d] = t + 350; }
-      else if (now[i] && t >= (held[d] ?? Infinity)) { move(d); held[d] = t + 110; }
-      else if (!now[i]) delete held[d];
+    for (const [d, bit] of DIRS) {
+      if (pressed(bit)) { move(d); held[d] = t + 350; }
+      else if (is(bit) && t >= (held[d] ?? Infinity)) { move(d); held[d] = t + 110; }
+      else if (!is(bit)) delete held[d];
     }
-    if (pressed(0)) (document.activeElement as HTMLElement | null)?.click();
-    if (pressed(1)) back();
-    if (pressed(4)) sectionStep?.(-1);
-    if (pressed(5)) sectionStep?.(1);
+    if (pressed(FB.cross)) (document.activeElement as HTMLElement | null)?.click();
+    if (pressed(FB.circle)) back();
+    if (pressed(FB.l1)) sectionStep?.(-1);
+    if (pressed(FB.r1)) sectionStep?.(1);
   }
-  prev = now;
+  prevFull = full; prevHome = home; prevSel = sel; prevStart = start;
 }
-function startPoll() { if (!polling && padEnabled && pads().length) { polling = true; requestAnimationFrame(poll); } }
 export const padConnected = () => pads().length > 0;
 
 export function initNav(): void {
   addEventListener('keydown', onKey);
   addEventListener('pointerdown', e => setInputMode((e as PointerEvent).pointerType === 'touch' ? 'touch' : 'pointer'), { passive: true });
-  addEventListener('gamepadconnected', () => { setInputMode('pad'); startPoll(); dispatchEvent(new Event('mishrin:pad')); });
+  addEventListener('gamepadconnected', () => { setInputMode('pad'); dispatchEvent(new Event('mishrin:pad')); });
   addEventListener('gamepaddisconnected', () => dispatchEvent(new Event('mishrin:pad')));
-  startPoll();
+  onPad(onPadState);
 }

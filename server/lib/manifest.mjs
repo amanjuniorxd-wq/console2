@@ -30,12 +30,18 @@ export function relPath(p, what, allowEmpty = false) {
   return segs.join('/');
 }
 
-export function validateManifest(m, { allowNetwork = false } = {}) {
-  if (!m || typeof m !== 'object' || Array.isArray(m)) fail('manifest must be an object');
-  if (typeof m.id !== 'string' || !ID.test(m.id)) fail('id must match ^[a-z0-9][a-z0-9-]{0,63}$');
-  if (m.type !== 'windows') fail('type must be "windows"');
-  if (m.runtime !== 'wine') fail('runtime must be "wine"');
-  const out = { id: m.id, title: String(m.title || m.id).slice(0, 80), type: 'windows', runtime: 'wine' };
+/** Full controller vocabulary (standard gamepad layout). Windows titles use the 7 logical buttons; emulator titles all 16. */
+export const FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'select', 'start', 'l3', 'r3'];
+/** Emulator platforms the worker pool can host. The emulator is fixed per platform: clients can never pick a binary. */
+export const EMULATOR_PLATFORMS = {
+  ps2: { emulator: 'pcsx2', boot: /\.(iso|chd|cue)$/i, ram: 4096, cpus: 2, storageMB: 8192 },
+  ps3: { emulator: 'rpcs3', boot: /(^|\/)EBOOT\.BIN$|\.iso$/i, ram: 8192, cpus: 4, storageMB: 65536 },
+};
+/** Default keyboard bindings the worker's emulator profiles configure (Keyboard pad handler). */
+export const DEFAULT_FULL_PAD = { up: 'Up', down: 'Down', left: 'Left', right: 'Right', cross: 'x', circle: 'c', square: 'z', triangle: 'v',
+  l1: 'q', r1: 'e', l2: '1', r2: '3', select: 'BackSpace', start: 'Return', l3: 'f', r3: 'g' };
+
+function validateFiles(m, out) {
   if (!Array.isArray(m.files) || !m.files.length || m.files.length > 200000) fail('files must be a non-empty list');
   const seen = new Set(); let total = 0;
   out.files = m.files.map(f => {
@@ -49,6 +55,55 @@ export function validateManifest(m, { allowNetwork = false } = {}) {
     return { path, size: f.size, chunks: [...f.chunks] };
   });
   if (total > 256 * 1024 ** 3) fail('game too large');
+  return seen;
+}
+
+function validateCommon(m, out, defaults) {
+  const net = m.network ?? false;
+  if (net !== false) fail('network access is not permitted for games');
+  out.network = false;
+  const r = m.requirements ?? {};
+  if (typeof r !== 'object' || Array.isArray(r)) fail('requirements must be an object');
+  const ram = r.ram ?? defaults.ram, gpu = r.gpu ?? true, cpus = r.cpus ?? defaults.cpus, storageMB = r.storageMB ?? defaults.storageMB, maxMinutes = r.maxMinutes ?? 240;
+  if (!Number.isInteger(ram) || ram < 128 || ram > 65536) fail('requirements.ram must be 128..65536 MB');
+  if (typeof gpu !== 'boolean') fail('requirements.gpu must be boolean');
+  if (typeof cpus !== 'number' || cpus < 0.25 || cpus > 32) fail('requirements.cpus must be 0.25..32');
+  if (!Number.isInteger(storageMB) || storageMB < 64 || storageMB > 262144) fail('requirements.storageMB must be 64..262144');
+  if (typeof maxMinutes !== 'number' || maxMinutes < 0.05 || maxMinutes > 1440) fail('requirements.maxMinutes out of range');
+  out.requirements = { ram, gpu, cpus, storageMB, maxMinutes };
+  const d = m.display ?? { width: 1280, height: 720 };
+  if (!Number.isInteger(d.width) || !Number.isInteger(d.height) || d.width < 320 || d.width > 3840 || d.height < 240 || d.height > 2160) fail('display must be 320x240..3840x2160');
+  out.display = { width: d.width & ~1, height: d.height & ~1 };
+}
+
+/** PS2/PS3-class titles on an emulator worker. The worker builds argv from its own emulator profile + `boot`. */
+function validateEmulator(m, out) {
+  const plat = EMULATOR_PLATFORMS[m.platform];
+  if (!plat) fail(`platform must be one of ${Object.keys(EMULATOR_PLATFORMS).join('|')}`);
+  if ((m.emulator ?? plat.emulator) !== plat.emulator) fail(`emulator for ${m.platform} must be ${plat.emulator}`);
+  Object.assign(out, { type: 'emulator', platform: m.platform, emulator: plat.emulator });
+  const seen = validateFiles(m, out);
+  const boot = relPath(m.boot, 'boot');
+  if (!plat.boot.test(boot)) fail(`boot is not a valid ${m.platform} boot file`);
+  if (!seen.has(boot.toLowerCase())) fail('boot is not part of the game files');
+  out.boot = boot;
+  if (m.args !== undefined && !(Array.isArray(m.args) && m.args.length === 0)) fail('emulator titles take no arguments');
+  validateCommon(m, out, plat);
+  const cm = m.controllerMap ?? {};
+  if (typeof cm !== 'object' || Array.isArray(cm)) fail('controllerMap must be an object');
+  out.controllerMap = { ...DEFAULT_FULL_PAD };
+  for (const [k, v] of Object.entries(cm)) { if (!FULL_PAD.includes(k) || !KEYS.has(v)) fail(`controllerMap ${k}->${v} not allowed`); out.controllerMap[k] = v; }
+  return out;
+}
+
+export function validateManifest(m, { allowNetwork = false } = {}) {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) fail('manifest must be an object');
+  if (typeof m.id !== 'string' || !ID.test(m.id)) fail('id must match ^[a-z0-9][a-z0-9-]{0,63}$');
+  if (m.type === 'emulator') return validateEmulator(m, { id: m.id, title: String(m.title || m.id).slice(0, 80) });
+  if (m.type !== 'windows') fail('type must be "windows" or "emulator"');
+  if (m.runtime !== 'wine') fail('runtime must be "wine"');
+  const out = { id: m.id, title: String(m.title || m.id).slice(0, 80), type: 'windows', runtime: 'wine' };
+  const seen = validateFiles(m, out);
   const exe = relPath(m.executable, 'executable');
   if (!exe.toLowerCase().endsWith('.exe')) fail('executable must be a .exe');
   if (!seen.has(exe.toLowerCase())) fail('executable is not part of the game files');
@@ -106,4 +161,10 @@ export function uploadManifest(sha, size, title, arch) {
     files: [{ path: 'game.exe', size, chunks: [sha] }], network: false, arch, graphics: 'auto',
     requirements: { ram: 2048, gpu: true, maxMinutes: 240 },
   });
+}
+
+/** The worker runtime a validated manifest needs (what workers advertise and the scheduler matches on). */
+export function runtimeOf(m) {
+  if (m.type === 'emulator') return m.platform;
+  return m.arch === 'x86' ? 'x86' : 'x64-win';
 }

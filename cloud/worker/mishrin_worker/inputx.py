@@ -7,15 +7,19 @@ Wire format = existing `input` data channel (server/PROTOCOL.md):
   [2, buttons, x:u16, y:u16] pointer
   [4, steps:i8]              mouse wheel notches (+ down)
   [3, btn, down]            controller / touch button → mapped to keys by controllerMap
+  [5, mask:u16]              full controller state (16 buttons, FULL_PAD bit order) → keys by controllerMap (emulator titles)
   text "k1<code>" / "k0<code>" raw key
 """
 import struct
 import threading
+import time
 
 from Xlib import X, XK, display as xdisplay
 from Xlib.ext import xtest
 
 BTN_NAMES = ['up', 'down', 'left', 'right', 'a', 'b', 'start']
+FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'select', 'start', 'l3', 'r3']
+LOGICAL_ALIAS = {'a': 'cross', 'b': 'circle'}  # logical A/B on a full-pad (emulator) map
 
 CODE_TO_KEYSYM = {
     **{f'Key{c}': c.lower() for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'},
@@ -42,17 +46,37 @@ class Injector:
         self.lock = threading.Lock()
         self.down_keys = set()
         self.buttons = 0
+        self.mask = 0
         self.events = 0
+        self._focus_checked = 0.0
 
     def _keycode(self, keysym_name):
         ks = XK.string_to_keysym(keysym_name)
         return self.d.keysym_to_keycode(ks) if ks else 0
+
+    def _ensure_focus(self):
+        """There is no window manager: X focus defaults to PointerRoot, so keys would go to whatever is under the
+        pointer (often nothing when the game window is smaller than the display). Focus the game's top-level window."""
+        now = time.monotonic()
+        if now - self._focus_checked < 1.0:
+            return
+        self._focus_checked = now
+        try:
+            for w in reversed(self.root.query_tree().children):   # stacking order: last = topmost
+                if w.get_attributes().map_state == X.IsViewable and w.get_wm_name():
+                    if self.d.get_input_focus().focus != w:
+                        w.set_input_focus(X.RevertToParent, X.CurrentTime)
+                    return
+        except Exception:
+            pass
 
     def key(self, keysym_name, down):
         kc = self._keycode(keysym_name)
         if not kc:
             return False
         with self.lock:
+            if down:
+                self._ensure_focus()
             xtest.fake_input(self.d, X.KeyPress if down else X.KeyRelease, kc)
             self.d.flush()
             (self.down_keys.add if down else self.down_keys.discard)(kc)
@@ -94,9 +118,16 @@ class Injector:
             return
         t = data[0]
         if t == 3 and len(data) >= 3 and data[1] < len(BTN_NAMES):
-            ks = self.pad.get(BTN_NAMES[data[1]])
+            name = BTN_NAMES[data[1]]
+            ks = self.pad.get(name) or self.pad.get(LOGICAL_ALIAS.get(name, ''))
             if ks:
                 self.key(ks, bool(data[2]))
+        elif t == 5 and len(data) >= 3:
+            mask = (data[1] << 8) | data[2]
+            changed, self.mask = mask ^ self.mask, mask
+            for i, name in enumerate(FULL_PAD):
+                if changed & (1 << i) and self.pad.get(name):
+                    self.key(self.pad[name], bool(mask & (1 << i)))
         elif t == 2 and len(data) >= 6:
             buttons, x, y = struct.unpack('>BHH', bytes(data[1:6]))
             self.pointer(buttons, x / 65535, y / 65535)
@@ -110,6 +141,7 @@ class Injector:
             for kc in list(self.down_keys):
                 xtest.fake_input(self.d, X.KeyRelease, kc)
             self.down_keys.clear()
+            self.mask = 0
             self.d.flush()
 
     def windows(self):

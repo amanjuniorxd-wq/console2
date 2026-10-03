@@ -1,0 +1,115 @@
+#!/usr/bin/python3
+"""MOCK console emulator — a test double for the cloud worker's emulator profiles. It is NOT an emulator.
+
+It exercises everything a real RPCS3/PCSX2 session needs from the worker — firmware check, boot-file validation,
+an X11 window to stream, controller input through the profile's key bindings, save data under the emulator's home
+(captured by the cloud save layer), restore on the next launch — without emulating anything. Window title:
+    MOCK-P3 id=<title id> x=<px> y=<py> score=<n> loaded=<0|1> pad=<last button>
+"""
+import json
+import os
+import struct
+import sys
+
+from Xlib import X, XK, display
+
+mode = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--mode=')), 'ps3')
+boot = sys.argv[-1]
+home = os.environ.get('HOME', '/tmp')
+FW = {'ps3': '.config/rpcs3/dev_flash/vsh/module/vsh.self', 'ps2': '.config/PCSX2/bios/mock-bios.bin'}[mode]
+if not os.path.isfile(os.path.join(home, FW)):
+    sys.exit(f'mock-emulator: firmware missing ({FW})')
+
+ident = 'UNKNOWN'
+with open(boot, 'rb') as f:
+    head = f.read(4)
+
+
+def iso_volume(path):
+    with open(path, 'rb') as f:
+        f.seek(16 * 2048)
+        pvd = f.read(2048)
+    if pvd[1:6] != b'CD001':
+        sys.exit('mock-emulator: not an ISO 9660 disc')
+    return pvd[40:72].decode('latin1').strip() or 'DISC'
+
+
+if mode == 'ps3' and boot.lower().endswith('.iso'):
+    ident = iso_volume(boot)[:20]
+    save = os.path.join(home, '.config/rpcs3/dev_hdd0/home/00000001/savedata', ident, 'SAVE.DAT')
+elif mode == 'ps3':
+    if head not in (b'SCE\0', b'\x7fELF'):
+        sys.exit('mock-emulator: boot file is not SELF/ELF')
+    sfo = os.path.join(os.path.dirname(os.path.dirname(boot)), 'PARAM.SFO')
+    b = open(sfo, 'rb').read()
+    kt, dt, n = struct.unpack_from('<III', b, 8)
+    for i in range(n):
+        ko, _fmt, ln, _mx, do = struct.unpack_from('<HHIII', b, 20 + i * 16)
+        key = b[kt + ko:b.index(b'\0', kt + ko)].decode()
+        if key == 'TITLE_ID':
+            ident = b[dt + do:dt + do + ln].rstrip(b'\0').decode()
+    save = os.path.join(home, '.config/rpcs3/dev_hdd0/home/00000001/savedata', ident, 'SAVE.DAT')
+else:
+    iso_volume(boot)
+    ident = os.path.splitext(os.path.basename(boot))[0][:20]
+    save = os.path.join(home, '.config/PCSX2/memcards/Mcd001.ps2')
+
+pad = json.loads(os.environ.get('MISHRIN_PAD', '{}'))
+st = {'x': 300, 'y': 160, 'score': 0}
+loaded = 0
+if os.path.isfile(save):
+    try:
+        st.update(json.load(open(save)))
+        loaded = 1
+    except ValueError:
+        pass
+
+d = display.Display()
+scr = d.screen()
+W, H = 640, 360
+win = scr.root.create_window(0, 0, W, H, 0, scr.root_depth, X.InputOutput, X.CopyFromParent,
+                             background_pixel=scr.black_pixel, event_mask=X.ExposureMask | X.KeyPressMask | X.KeyReleaseMask)
+gc = win.create_gc(foreground=0xFF9933)  # saffron
+keysym_to_btn = {XK.string_to_keysym(v): k for k, v in pad.items()}
+last = '-'
+
+
+def title():
+    win.set_wm_name(f'MOCK-{mode.upper().replace("PS", "P")} id={ident} x={st["x"]} y={st["y"]} score={st["score"]} loaded={loaded} pad={last}')
+
+
+def draw():
+    win.clear_area(0, 0, W, H)
+    win.fill_rectangle(gc, st['x'], st['y'], 40, 40)
+    d.flush()
+
+
+def write_save():
+    os.makedirs(os.path.dirname(save), exist_ok=True)
+    tmp = save + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(st, f)
+    os.replace(tmp, save)
+
+
+win.map()
+title()
+d.sync()
+while True:
+    e = d.next_event()
+    if e.type == X.Expose:
+        draw()
+    elif e.type == X.KeyPress:
+        btn = keysym_to_btn.get(d.keycode_to_keysym(e.detail, 0))
+        if not btn:
+            continue
+        last = btn
+        dx, dy = {'left': (-20, 0), 'right': (20, 0), 'up': (0, -20), 'down': (0, 20)}.get(btn, (0, 0))
+        st['x'] = max(0, min(W - 40, st['x'] + dx))
+        st['y'] = max(0, min(H - 40, st['y'] + dy))
+        if btn == 'cross':
+            st['score'] += 1
+        if btn in ('start', 'triangle'):
+            write_save()          # in-game save, like a real title writing its save data
+        title()
+        draw()

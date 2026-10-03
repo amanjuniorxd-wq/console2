@@ -6,6 +6,11 @@ import type { LaunchContext, RuntimeAdapter, Session, Stats, Btn } from '../runt
 import type { Settings } from '../ui/settings-store';
 import type { Caps } from '../mpc/probe';
 import { getPackage } from '../mpc/store';
+import { saveKey, idHeaders } from './identity';
+import { FB, LOGICAL_FROM_FULL } from '../input/pad';
+
+/** Console runtime kind → worker runtime on the wire (emulator platforms use their cloud runtime ids). */
+export const WIRE_RUNTIME: Record<string, string> = { p2: 'ps2', p3: 'ps3' };
 
 export interface Quality { height: number; fps: number; kbps: number }
 
@@ -42,7 +47,7 @@ const base = (s: Settings) => s.cloudEndpoint.replace(/\/+$/, '');
 let iceCache: { ep: string; servers: RTCIceServer[] } | null = null;
 
 async function api(s: Settings, path: string, init?: RequestInit): Promise<Response> {
-  const r = await fetch(base(s) + path, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers || {}) } });
+  const r = await fetch(base(s) + path, { ...init, headers: { 'content-type': 'application/json', ...idHeaders(), ...(init?.headers || {}) } });
   return r;
 }
 
@@ -56,10 +61,20 @@ async function iceServers(s: Settings): Promise<RTCIceServer[]> {
 }
 
 /** Ship user-attached packages once per content hash (dedup → no re-upload across sessions/devices). */
-async function packageRef(ctx: LaunchContext): Promise<{ url?: string; cas?: string; catalogId?: string }> {
+async function packageRef(ctx: LaunchContext): Promise<{ url?: string; cas?: string; catalogId?: string; upload?: string }> {
   const { game, settings: s, status, signal } = ctx;
   // Titles registered on the cloud (e.g. Windows games published with cloud/tools/pack.mjs) are named, never shipped.
   if (game.url.startsWith('cloud:')) return { catalogId: game.url.slice(6) };
+  // Console titles the player uploaded to their cloud (Upload Game → "Upload to your cloud").
+  if (game.url.startsWith('upload:')) return { upload: game.url.slice(7) };
+  // A Windows .exe kept on this device: chunked, resumable, deduplicated upload; the cloud inspects the bytes.
+  if (game.url.startsWith('idb:') && (game.runtime === 'x64-win' || game.runtime === 'x86')) {
+    const pkg = await getPackage(game);
+    const { upload } = await import('../storage/upload');
+    status('Uploading', 0);
+    const r = await upload([{ path: 'game.exe', blob: new Blob([pkg.bytes]) }], { title: game.title, signal, onProgress: p => status(p.phase === 'hashing' ? 'Preparing upload' : 'Uploading', p.total ? p.done / p.total : 0) });
+    return { upload: r.id };
+  }
   if (!game.url.startsWith('idb:') && !game.sha256) return { url: new URL(game.url, location.href).href };
   const hash = game.sha256 ?? (await getPackage(game)).hash;
   const head = await api(s, `/v1/packages/${hash}`, { method: 'HEAD', signal });
@@ -72,14 +87,6 @@ async function packageRef(ctx: LaunchContext): Promise<{ url?: string; cas?: str
   return { cas: hash };
 }
 
-/** Per-device key that scopes cloud save data to this player (no account system yet). */
-function saveKey(): string {
-  try {
-    let k = localStorage.getItem('mishrin.saveKey');
-    if (!k) { k = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/[+/=]/g, c => (c === '+' ? '-' : c === '/' ? '_' : '')); localStorage.setItem('mishrin.saveKey', k); }
-    return k;
-  } catch { return ''; }
-}
 
 const notice = (text: string) => dispatchEvent(new CustomEvent('mishrin:notice', { detail: text }));
 
@@ -104,11 +111,11 @@ export const cloud: RuntimeAdapter = {
     let ended = false, onEnd: ((r: string) => void) | undefined;
     const end = (why: string) => { if (ended) return; ended = true; onEnd?.(why); };
     const pending = new Map<number, (m: { data?: string; ok?: boolean }) => void>();
-    let seq = 0, canSave = false, paused = false;
+    let seq = 0, canSave = false, paused = false, fullPad = false;
     const onCtl = (e: MessageEvent) => {
       try {
         const m = JSON.parse(e.data);
-        if (m.t === 'caps') canSave = !!m.save;
+        if (m.t === 'caps') { canSave = !!m.save; fullPad = m.pad === 'full'; }
         else if ((m.t === 'saved' || m.t === 'loaded') && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); }
         else if (m.t === 'notice' && typeof m.text === 'string') notice(m.text.slice(0, 120));
         else if (m.t === 'end') end(m.reason || 'Cloud session ended.');
@@ -137,16 +144,33 @@ export const cloud: RuntimeAdapter = {
     let q = initialQuality(s, caps);
     // Ceiling for upward probing: the chosen preset, or the top tier on Auto (Data Saver keeps its cap).
     const max: Quality = { ...q, kbps: s.cloudQuality === 'auto' && !caps.net.saveData ? 20000 : q.kbps };
-    const r = await api(s, '/v1/sessions', {
-      method: 'POST', signal,
-      body: JSON.stringify({ game: { id: game.id, title: game.title, runtime: game.runtime, launchConfig: game.launchConfig ?? {}, ...ref }, offer: pc0.localDescription!.sdp, prefs: q, client: { os: caps.os, mobile: caps.mobile, saveKey: saveKey() } }),
-    }).catch(e => { pc0.close(); throw signal.aborted ? e : new Error('Cloud endpoint unreachable.'); });
+    const body = { game: { id: game.id, title: game.title, runtime: WIRE_RUNTIME[game.runtime] ?? game.runtime, launchConfig: game.launchConfig ?? {}, ...ref }, offer: pc0.localDescription!.sdp, prefs: q, client: { os: caps.os, mobile: caps.mobile, saveKey: saveKey() } };
+    const create = (extra: object = {}) => api(s, '/api/session', { method: 'POST', signal, body: JSON.stringify({ ...body, ...extra }) })
+      .catch(e => { pc0.close(); throw signal.aborted ? e : new Error('Cloud endpoint unreachable.'); });
+    let r = await create();
+    // Every slot busy → the cloud put us in line: show the position, claim the reserved slot when it is our turn.
+    for (let j = r.status === 503 ? await r.clone().json().catch(() => ({})) : {}; r.status === 503 && j.queue; ) {
+      const t = j.queue as { ticket: string; token: string; position: number };
+      let st = { state: 'waiting', position: t.position };
+      while (st.state !== 'ready') {
+        status(`Waiting for a cloud slot · position ${st.position}`, 0);
+        await new Promise(res => setTimeout(res, 1500));
+        signal.throwIfAborted();
+        const qr = await api(s, `/api/queue/${t.ticket}?token=${encodeURIComponent(t.token)}`, { signal });
+        if (!qr.ok) { pc0.close(); throw new Error('Lost your place in the queue. Try again.'); }
+        st = await qr.json();
+      }
+      status('Starting', 0.3);
+      r = await create({ ticket: t.ticket, ticketToken: t.token });
+      j = r.status === 503 ? await r.clone().json().catch(() => ({})) : {};
+    }
     if (!r.ok) {
       pc0.close();
       const msg = await r.json().then(j => j.error as string).catch(() => '');
       throw new Error(msg || (r.status === 503 ? 'No cloud node available for this title right now.' : `Cloud session refused (${r.status}).`));
     }
-    const { id, answer } = await r.json();
+    const { id, answer, token } = await r.json() as { id: string; answer: string; token?: string };
+    const auth = { 'x-session-token': token || '' };
     await pc0.setRemoteDescription({ type: 'answer', sdp: answer });
     status('Starting stream', 0.6);
 
@@ -172,7 +196,7 @@ export const cloud: RuntimeAdapter = {
       video.addEventListener('loadeddata', () => { clearTimeout(t); res(); }, { once: true });
       pc0.addEventListener('connectionstatechange', () => { if (pc0.connectionState === 'failed') { clearTimeout(t); rej(new Error('Cloud connection failed.')); } });
       signal.addEventListener('abort', () => { clearTimeout(t); rej(signal.reason); }, { once: true });
-    }).catch(e => { pc0.close(); video.remove(); fetch(`${base(s)}/v1/sessions/${id}`, { method: 'DELETE', keepalive: true }).catch(() => {}); throw e; });
+    }).catch(e => { pc0.close(); video.remove(); fetch(`${base(s)}/api/session/${id}`, { method: 'DELETE', keepalive: true, headers: auth }).catch(() => {}); throw e; });
     video.play().catch(() => {});
     // Audio is muted until the first user gesture inside the session (autoplay policy).
     const unmute = () => { video.muted = false; };
@@ -187,7 +211,7 @@ export const cloud: RuntimeAdapter = {
       for (let attempt = 0; attempt < 4 && !ended; attempt++) {
         try {
           const next = await makePeer();
-          const rr = await api(s, `/v1/sessions/${id}/reconnect`, { method: 'POST', body: JSON.stringify({ offer: next.pc.localDescription!.sdp }) });
+          const rr = await api(s, `/api/session/${id}/reconnect`, { method: 'POST', headers: auth, body: JSON.stringify({ offer: next.pc.localDescription!.sdp }) });
           if (rr.status === 404 || rr.status === 410) { next.pc.close(); break; }
           if (!rr.ok) { next.pc.close(); throw new Error(String(rr.status)); }
           const j = await rr.json();
@@ -216,18 +240,33 @@ export const cloud: RuntimeAdapter = {
 
     // ---- live stats + adaptive bitrate / resolution / fps ----
     const stats: Stats = { fps: 0, frameMs: 0, width: 0, height: 0, route: 'Cloud · stream' };
-    let prev = { lost: 0, recv: 0, frames: 0, t: performance.now() };
+    let prev = { lost: 0, recv: 0, frames: 0, bytes: 0, t: performance.now() };
+    let codec = '';
     const statT = setInterval(async () => {
-      let lost = 0, recv = 0, rtt = 0;
-      (await peer.pc.getStats()).forEach((st: any) => {
-        if (st.type === 'inbound-rtp' && st.kind === 'video') { lost = st.packetsLost ?? 0; recv = st.packetsReceived ?? 0; const fr = st.framesDecoded ?? 0, now = performance.now(); stats.fps = Math.round(st.framesPerSecond ?? ((fr - prev.frames) * 1000) / (now - prev.t)); prev.frames = fr; prev.t = now; stats.width = st.frameWidth ?? 0; stats.height = st.frameHeight ?? 0; stats.frameMs = +(((st.totalDecodeTime ?? 0) / Math.max(1, st.framesDecoded ?? 1)) * 1000).toFixed(2); }
+      let lost = 0, recv = 0, rtt = 0, bytes = 0, jitter = 0;
+      const all = await peer.pc.getStats();
+      all.forEach((st: any) => {
+        if (st.type === 'inbound-rtp' && st.kind === 'video') {
+          lost = st.packetsLost ?? 0; recv = st.packetsReceived ?? 0; bytes = st.bytesReceived ?? 0; jitter = (st.jitterBufferDelay ?? 0) / Math.max(1, st.jitterBufferEmittedCount ?? 1) * 1000;
+          const fr = st.framesDecoded ?? 0, now = performance.now(); stats.fps = Math.round(st.framesPerSecond ?? ((fr - prev.frames) * 1000) / (now - prev.t)); prev.frames = fr;
+          stats.width = st.frameWidth ?? 0; stats.height = st.frameHeight ?? 0; stats.frameMs = +(((st.totalDecodeTime ?? 0) / Math.max(1, st.framesDecoded ?? 1)) * 1000).toFixed(2);
+          if (st.codecId) codec = (all.get(st.codecId) as any)?.mimeType?.replace('video/', '') ?? codec;
+        }
         if (st.type === 'candidate-pair' && st.state === 'succeeded' && st.nominated) rtt = (st.currentRoundTripTime ?? 0) * 1000;
       });
-      const dl = lost - prev.lost, dr = recv - prev.recv; prev.lost = lost; prev.recv = recv;
+      const now = performance.now();
+      const kbps = Math.round(((bytes - prev.bytes) * 8) / Math.max(1, now - prev.t));
+      const dl = lost - prev.lost, dr = recv - prev.recv; prev.lost = lost; prev.recv = recv; prev.bytes = bytes; prev.t = now;
       const loss = dr + dl > 0 ? dl / (dr + dl) : 0;
       const nq = adapt(q, max, loss, rtt);
       if (nq.kbps !== q.kbps || nq.height !== q.height) { q = nq; sendCtl({ t: 'quality', ...q }); }
-      stats.extra = `${Math.round(rtt)} ms · ${(q.kbps / 1000).toFixed(1)} Mbps`;
+      stats.extra = `${Math.round(rtt)} ms · ${(kbps / 1000).toFixed(1)} Mbps`;
+      stats.details = [
+        ['Path', 'Cloud · stream'], ['Connection', `${peer.pc.connectionState}${reconnecting ? ' · reconnecting' : ''}`], ['FPS', String(stats.fps)],
+        ['Latency (RTT)', `${Math.round(rtt)} ms`], ['Bitrate', `${(kbps / 1000).toFixed(1)} Mbps received · target ${(q.kbps / 1000).toFixed(1)}`],
+        ['Packet loss', `${(loss * 100).toFixed(1)}%`], ['Jitter buffer', `${jitter.toFixed(0)} ms`], ['Video', `${codec || '—'} ${stats.width}×${stats.height}`],
+        ['Controller', fullPad ? 'full pad (16 buttons)' : 'logical (mapped by the game)'],
+      ];
     }, 2000);
 
     // ---- keepalive + idle shutdown (frees the cloud node) ----
@@ -235,12 +274,13 @@ export const cloud: RuntimeAdapter = {
     const hb = setInterval(() => {
       if (Date.now() - lastInput > s.idleShutdownMin * 60000) return end('Closed after inactivity to free cloud resources.');
       if (hiddenAt && Date.now() - hiddenAt > 120000) return end('Closed while in background to free cloud resources.');
-      api(s, `/v1/sessions/${id}/heartbeat`, { method: 'POST' }).then(r => { if (r.status === 404) end('Cloud session expired.'); }).catch(() => {});
+      api(s, `/api/session/${id}/heartbeat`, { method: 'POST', headers: auth }).then(r => { if (r.status === 404) end('Cloud session expired.'); }).catch(() => {});
     }, 15000);
     const vis = () => { hiddenAt = document.hidden ? Date.now() : 0; };
     document.addEventListener('visibilitychange', vis);
 
     const buf = new Uint8Array(3);
+    let prevFull = 0;
     const sendInput = (a: number, b: number, c: number) => { lastInput = Date.now(); if (peer.inputCh.readyState !== 'open') return; buf[0] = a; buf[1] = b; buf[2] = c; peer.inputCh.send(buf); };
 
     return {
@@ -250,6 +290,13 @@ export const cloud: RuntimeAdapter = {
       input: (b: Btn, down: boolean) => sendInput(1, b, down ? 1 : 0),
       // Controller / touch buttons use their own message type so PC nodes don't double-press keyboard input.
       padInput: (b: Btn, down: boolean) => sendInput(3, b, down ? 1 : 0),
+      // Unified input: emulator workers (caps.pad === 'full') take the whole 16-button state; PC titles get logical
+      // button edges, which the worker maps through the game's controllerMap.
+      padState(full: number) {
+        if (fullPad) { lastInput = Date.now(); if (peer.inputCh.readyState === 'open') peer.inputCh.send(new Uint8Array([5, (full >> 8) & 0xff, full & 0xff])); }
+        else for (const [f, b] of LOGICAL_FROM_FULL) { const bit = 1 << FB[f]; if ((full ^ prevFull) & bit) sendInput(3, b, full & bit ? 1 : 0); }
+        prevFull = full;
+      },
       rawKey(code: string, down: boolean) { lastInput = Date.now(); if (peer.inputCh.readyState === 'open') peer.inputCh.send(`k${down ? 1 : 0}${code}`); },
       pointer(x: number, y: number, buttons: number) {
         lastInput = Date.now(); if (peer.inputCh.readyState !== 'open') return;
@@ -271,7 +318,7 @@ export const cloud: RuntimeAdapter = {
         ended = true; clearInterval(statT); clearInterval(hb); clearTimeout(dropTimer);
         document.removeEventListener('visibilitychange', vis);
         removeEventListener('pointerdown', unmute); removeEventListener('keydown', unmute);
-        fetch(`${base(s)}/v1/sessions/${id}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+        fetch(`${base(s)}/api/session/${id}`, { method: 'DELETE', keepalive: true, headers: auth }).catch(() => {});
         peer.pc.close(); video.srcObject = null; video.remove();
       },
     } as Session;

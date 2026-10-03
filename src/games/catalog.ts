@@ -14,7 +14,7 @@ function sanitize(g: Partial<Game>): Game | null {
   // Unknown runtimes are kept (and shown as unsupported) rather than silently dropped.
   const runtime = (typeof g.runtime === 'string' ? g.runtime : 'unknown') as RuntimeKind;
   const url = typeof g.url === 'string' ? g.url : '';
-  if (url && !/^(https?:|idb:|emu:local$|cloud:[a-z0-9][a-z0-9-]{0,63}$|\/|\.\/)/.test(url)) return null; // no javascript:/data: launch targets
+  if (url && !/^(https?:|idb:|emu:local$|cloud:[a-z0-9][a-z0-9-]{0,63}$|upload:[a-f0-9]{32}$|\/|\.\/)/.test(url)) return null; // no javascript:/data: launch targets
   return {
     id: g.id, title: g.title.slice(0, 80), artwork: typeof g.artwork === 'string' ? g.artwork : 'gen:landscape',
     description: typeof g.description === 'string' ? g.description.slice(0, 600) : '', runtime,
@@ -31,7 +31,10 @@ export async function loadCatalog(): Promise<Game[]> {
     idb.all<Partial<Game>>('games').catch(() => []),
   ]);
   const map = new Map<string, Game>();
-  for (const g of remote as Partial<Game>[]) { const s = sanitize(g); if (s) map.set(s.id, s); }
+  // Bundled entries use app-root paths ("/games/…"): resolve them against the app base so the console also works
+  // under a sub-path such as /mishrin-console/.
+  const rebase = (u?: string) => (typeof u === 'string' && u.startsWith('/') && !u.startsWith('//') ? base + u.slice(1) : u);
+  for (const g of remote as Partial<Game>[]) { const s = sanitize({ ...g, url: rebase(g.url), artwork: rebase(g.artwork) }); if (s) map.set(s.id, s); }
   for (const g of local) {
     const prev = g.id ? map.get(g.id) : undefined;
     const s = sanitize(prev ? { ...prev, ...g } : g);
@@ -129,8 +132,26 @@ export async function addEmuGame(det: import('../emu/detect').Detection, progres
   return g;
 }
 
+/** A console game the player uploaded to their own cloud: the library keeps only a reference (url "upload:<id>"). */
+export async function addCloudGame(r: { id: string; platform: string; title: string; serial?: string }, det: { files: File[]; paths: string[]; size: number; format?: string; title?: string }): Promise<Game> {
+  const runtime = ({ ps2: 'p2', ps3: 'p3', windows: 'x64-win' } as Record<string, RuntimeKind>)[r.platform];
+  if (!runtime) throw new Error(`The cloud detected an unsupported platform (${r.platform}).`);
+  const t = (r.title || det.title || 'Untitled').slice(0, 80);
+  let id = `c-${slug(t)}`;
+  for (let i = 2; byId(id); i++) id = `c-${slug(t)}-${i}`;
+  const platform = runtime === 'p2' ? 'p2' : 'p3';
+  const g: Game = {
+    id, title: t, artwork: runtime === 'p2' ? 'gen:action' : 'gen:scifi', runtime, url: `upload:${r.id}`, user: true, controller: true, touch: true, requirements: {}, launchConfig: {},
+    description: `Uploaded by you to your cloud${r.serial ? ` (${r.serial})` : ''}. Streams from a cloud worker.`,
+    emu: { platform, format: det.format || 'upload', primary: det.paths[0] || '', files: det.files.map((f, i) => ({ name: det.paths[i] || f.name, size: f.size })), size: det.size, serial: r.serial, store: 'cloud' },
+  };
+  await idb.put('games', id, g);
+  await loadCatalog();
+  return g;
+}
+
 export async function removeUserData(game: Game): Promise<void> {
-  if (game.emu) { const s = await import('../emu/storage'); await s.removeFiles(['games', game.id]).catch(() => {}); await idb.del('files', `card:${game.id}`).catch(() => {}); }
+  if (game.emu && game.emu.store !== 'cloud') { const s = await import('../emu/storage'); await s.removeFiles(['games', game.id]).catch(() => {}); await idb.del('files', `card:${game.id}`).catch(() => {}); }
   await idb.del('files', game.id).catch(() => {});
   await idb.del('games', game.id).catch(() => {});
   await idb.del('saves', game.id).catch(() => {});

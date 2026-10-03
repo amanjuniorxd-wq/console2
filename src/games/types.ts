@@ -57,5 +57,5 @@ export interface EmuInfo {
   files: { name: string; size: number }[];
   size: number;             // total bytes
   serial?: string;          // e.g. SLUS_123.45 from SYSTEM.CNF (if present)
-  store: 'opfs' | 'idb';    // where the local copy lives
+  store: 'opfs' | 'idb' | 'cloud';    // where the copy lives ('cloud': uploaded by the player to their own cloud)
 }

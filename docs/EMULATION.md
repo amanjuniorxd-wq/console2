@@ -9,8 +9,8 @@ P1 boots with PCSX-ReARMed's open HLE BIOS replacement; a user may add their own
 | Core | Platform class | Status | What was verified |
 |---|---|---|---|
 | **Mishrin P1** | PlayStation-1-class | **Working** | Boots EXE / CUE+BIN / BIN / ISO / CHD / M3U in Chromium and in V8 (Node); 60 fps; keyboard, gamepad, touch and mouse (virtual console mouse on port 1 or 2) input; save/load state (bit-exact replay); memory card persists across sessions; fullscreen; Canvas 2D and WebGPU scaling; AudioWorklet audio with no steady-state underruns. Verified with an **original homebrew test program** (`emulators/p1/testgame`). Commercial games were not tested: none can be included. |
-| **Mishrin P2** | PlayStation-2-class | **Experimental: not available in this build** | Discs and CHDs are detected and labelled. No core ships. See the feasibility notes below. |
-| **Mishrin P3** | PlayStation-3-class | **Research** | Disc layouts and PKG files are detected. No emulator. Feasibility notes below. |
+| **Mishrin P2** | PlayStation-2-class | **In development** | Discs and CHDs are detected. No local core ships. A cloud path (upload with consent → PCSX2 worker profile) exists and is tested with a *mock* emulator only. |
+| **Mishrin P3 Cloud** | PlayStation-3-class | **Architecture ready · runtime not deployed** | Game folders, ISOs and PKGs are detected. A browser cannot run it; the cloud path (RPCS3 worker profile) is implemented and tested with a *mock* RPCS3. See docs/universal-runtime-architecture.md. |
 | **Mishrin P4** | PlayStation-4-class | **Research** | PKG files are detected. No emulator. Feasibility notes below. |
 
 Every disabled button says **Experimental — coming soon** or **Research — not available**. Nothing pretends to run.

@@ -1,0 +1,9 @@
+{
+ "name": "pcsx2", "runtime": "ps2", "version": "mock-1", "mock": true,
+ "binary": "mock-emulator",
+ "argv": ["{binary}", "--mode=ps2", "{boot}"],
+ "home": "home",
+ "firmware": { "label": "PS2 BIOS (mock)", "required": [".config/PCSX2/bios/mock-bios.bin"] },
+ "saves": [".config/PCSX2/memcards"],
+ "exclude": ["*.keep"]
+}

@@ -15,7 +15,7 @@
     "test:emu-core": "esbuild tests/emu/core.test.ts --bundle --platform=node --format=esm --log-level=warning | node --input-type=module",
     "test:emu": "npm run test:emu-unit && npm run test:emu-core",
     "test:emu-browser": "python3 tests/emu/e2e_emu.py",
-    "test:scheduler": "node tests/cloud/scheduler.test.mjs",
+    "test:scheduler": "node tests/cloud/scheduler.test.mjs && node tests/cloud/universal.test.mjs",
     "test:worker": "sudo /usr/bin/python3.12 tests/cloud/test_worker.py",
     "test:windows": "sudo python3 tests/cloud/e2e_windows.py"
   },

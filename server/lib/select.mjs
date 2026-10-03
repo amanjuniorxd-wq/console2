@@ -29,7 +29,7 @@ export function selectWorker(workers, need, now = Date.now()) {
   const ok = [...workers].filter(w =>
     alive(w, now) &&
     w.runtimes.has(need.runtime) &&
-    w.active.size < w.capacity &&
+    w.active.size + (w.holds?.size || 0) < w.capacity &&       // slots held for queued players count as taken
     !need.exclude?.has(w.id) &&
     (!need.ramMB || freeRamMB(w) >= need.ramMB) &&
     (!need.gpu || w.kind !== 'worker' || w.caps?.resources?.gpu?.available));

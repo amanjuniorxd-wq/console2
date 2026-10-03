@@ -37,5 +37,5 @@ cp "$HERE/LICENSE-NOTICE.md" "$OUT/NOTICE.md"
 SRC_SHA=$(sha256sum "$SRCDIR/mishrin-p1-source-$COMMIT.tar.xz" | cut -d' ' -f1)
 SHA=$(sha256sum "$OUT/mishrin-p1.wasm" | cut -d' ' -f1)
 SIZE=$(stat -c %s "$OUT/mishrin-p1.wasm")
-printf '{"id":"p1","core":"pcsx_rearmed","license":"GPL-2.0-or-later","upstream":"https://github.com/libretro/pcsx_rearmed","commit":"%s","url":"/cores/p1/mishrin-p1.wasm","sha256":"%s","size":%s,"sourceArchive":"/cores/p1/source/mishrin-p1-source-%s.tar.xz","sourceSha256":"%s","licenseText":"/cores/p1/COPYING","notice":"/cores/p1/NOTICE.md"}\n' "$COMMIT" "$SHA" "$SIZE" "$COMMIT" "$SRC_SHA" > "$OUT/core.json"
+printf '{"id":"p1","core":"pcsx_rearmed","license":"GPL-2.0-or-later","upstream":"https://github.com/libretro/pcsx_rearmed","commit":"%s","url":"mishrin-p1.wasm","sha256":"%s","size":%s,"sourceArchive":"source/mishrin-p1-source-%s.tar.xz","sourceSha256":"%s","licenseText":"COPYING","notice":"NOTICE.md"}\n' "$COMMIT" "$SHA" "$SIZE" "$COMMIT" "$SRC_SHA" > "$OUT/core.json"
 cat "$OUT/core.json"

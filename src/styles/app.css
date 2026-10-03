@@ -220,3 +220,26 @@ canvas.emu-surface { position: absolute; inset: 0; width: 100%; height: 100%; ob
 html.lite .btn, html.lite .badge, html.lite .field { backdrop-filter: none; -webkit-backdrop-filter: none; }
 html.lite .logo { filter: none; }
 html.lite .card { transition: none; }
+
+/* ---- runtime status (Emulators page) + universal upload ---- */
+.rt-status { margin: 0 0 28px; }
+.rt-list { display: grid; gap: 8px; }
+.rt-row { display: grid; grid-template-columns: 18px minmax(140px, 1.2fr) auto auto minmax(0, 3fr); align-items: center; gap: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid rgba(255, 138, 0, .12); border-radius: var(--r); }
+.rt-row .dot { font-size: 14px; line-height: 1; }
+.rt-row .dot.ok { color: var(--saffron); text-shadow: 0 0 8px rgba(255, 153, 51, .6); }
+.rt-row .dot.warn { color: #e0b04a; }
+.rt-row .dot.off { color: #5a524a; }
+.rt-row .rt-name { font-weight: 700; letter-spacing: .04em; }
+.rt-row .rt-name small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.rt-row .rt-live { color: #f1e6d8; font-size: 13px; }
+.rt-row .rt-detail { color: var(--muted); font-size: 13px; }
+.badge.maturity-ready, .badge.live-available { border-color: rgba(255, 153, 51, .45); color: var(--saffron); }
+.badge.maturity-in-development, .badge.maturity-architecture-ready, .badge.live-mock-only, .badge.live-busy { border-color: rgba(224, 176, 74, .4); color: #e0b04a; }
+.badge.maturity-research, .badge.live-not-deployed, .badge.live-no-cloud { color: var(--muted); }
+.consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: #ddd5cc; flex-basis: 100%; }
+.consent input { width: 20px; height: 20px; accent-color: var(--saffron); flex: none; margin-top: 2px; }
+@media (max-width: 720px) {
+  .rt-row { grid-template-columns: 18px 1fr auto; }
+  .rt-row .rt-detail { grid-column: 2 / -1; }
+  .rt-row .badge { display: none; }
+}

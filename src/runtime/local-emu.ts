@@ -2,32 +2,15 @@
 import type { LaunchContext, RuntimeAdapter, Session, Stats, Btn } from './types';
 import { EmulatorSession } from '../emu/session';
 import { PAD } from '../emu/types';
+import { KEY_FULL, FULL_FROM_LOGICAL, FB, remap, type FullButton } from '../input/pad';
 import { gameFiles, getBios, loadCard, storeCard } from '../emu/storage';
 import { plan as makePlan } from '../mpc/optimizer';
 import { probe } from '../mpc/probe';
 import { settings } from '../ui/settings-store';
 import { CORES } from '../emu/registry';
 
-/** Keyboard → controller (KeyboardEvent.code). Shown on the Controllers page. */
-export const KEYMAP: Record<string, number> = {
-  ArrowUp: PAD.up, ArrowDown: PAD.down, ArrowLeft: PAD.left, ArrowRight: PAD.right,
-  KeyZ: PAD.cross, KeyX: PAD.circle, KeyA: PAD.square, KeyS: PAD.triangle,
-  KeyQ: PAD.l1, KeyW: PAD.r1, KeyE: PAD.l2, KeyR: PAD.r2, Enter: PAD.start, ShiftRight: PAD.select, Backspace: PAD.select,
-};
-/** Standard-mapping gamepad button index → controller bit. */
-export const PADMAP: number[] = [PAD.cross, PAD.circle, PAD.square, PAD.triangle, PAD.l1, PAD.r1, PAD.l2, PAD.r2, PAD.select, PAD.start, PAD.l3, PAD.r3, PAD.up, PAD.down, PAD.left, PAD.right];
-const LOGICAL: Record<number, number> = { 0: PAD.up, 1: PAD.down, 2: PAD.left, 3: PAD.right, 4: PAD.cross, 5: PAD.circle, 6: PAD.start };
-
-export function padMask(p: Gamepad | null): number {
-  if (!p) return 0;
-  let m = 0;
-  for (let i = 0; i < PADMAP.length; i++) if (p.buttons[i]?.pressed) m |= 1 << PADMAP[i];
-  const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;                     // left stick drives the D-pad (digital pad)
-  if (ax < -0.5) m |= 1 << PAD.left; if (ax > 0.5) m |= 1 << PAD.right;
-  if (ay < -0.5) m |= 1 << PAD.up; if (ay > 0.5) m |= 1 << PAD.down;
-  return m;
-}
-
+/** Full pad (unified input) → libretro joypad bits used by Mishrin cores. */
+const P1_LAYOUT = PAD as unknown as Record<FullButton, number>;
 export const localEmu: RuntimeAdapter = {
   backend: 'local-emu',
   async launch(ctx: LaunchContext): Promise<Session> {
@@ -44,7 +27,7 @@ export const localEmu: RuntimeAdapter = {
     const emu = new EmulatorSession(e.platform);
     await emu.initialize({ host, plan: pl, scaling: settings.emuScaling ?? 'pixel', presenter });
     status('Starting game', 0.6);
-    const [files, bios, card] = await Promise.all([gameFiles(['games', game.id], e.files.map(f => f.name), e.store), getBios(e.platform), loadCard(game.id)]);
+    const [files, bios, card] = await Promise.all([gameFiles(['games', game.id], e.files.map(f => f.name), e.store === 'cloud' ? 'opfs' : e.store), getBios(e.platform), loadCard(game.id)]);
     const options: Record<string, string> = pl.profile === 'maximum' ? { pcsx_rearmed_spu_interpolation: 'gaussian', pcsx_rearmed_dithering: 'enabled' }
       : pl.profile === 'battery' ? { pcsx_rearmed_spu_interpolation: 'simple' } : {};
     const t0 = performance.now();
@@ -57,15 +40,10 @@ export const localEmu: RuntimeAdapter = {
     emu.onCard = d => { storeCard(game.id, d).catch(() => {}); };
     try { if (localStorage.getItem('mishrin.debug') === '1') (globalThis as { __mishrinEmu?: EmulatorSession }).__mishrinEmu = emu; } catch { /* no storage */ }
 
-    let keys = 0, pad = 0, touch = 0, last = -1, raf = 0, onEnd: ((r: string) => void) | undefined;
+    // Unified input: keyboard, gamepad (shared poller → padState) and touch all build one full-pad mask.
+    let keys = 0, pad = 0, touch = 0, last = -1, onEnd: ((r: string) => void) | undefined;
     let inputAt = 0;
-    const push = () => { const m = keys | pad | touch; if (m !== last) { last = m; emu.setControllerInput(0, m, inputAt || performance.timeOrigin + performance.now()); inputAt = 0; } };
-    const poll = () => {                                     // full controller (all 16 buttons), not just the UI subset
-      const p = navigator.getGamepads ? [...navigator.getGamepads()].find(Boolean) ?? null : null;
-      pad = padMask(p); push();
-      raf = requestAnimationFrame(poll);
-    };
-    raf = requestAnimationFrame(poll);
+    const push = () => { const m = remap(keys | pad | touch, P1_LAYOUT); if (m !== last) { last = m; emu.setControllerInput(0, m, inputAt || performance.timeOrigin + performance.now()); inputAt = 0; } };
     emu.onEnd = r => onEnd?.(r);
     let paused = false;
     const st: Stats = { fps: 0, frameMs: 0, width: info.width, height: info.height, route: `Local · ${core.name} · WASM SIMD · ${info.presenter === 'webgpu' ? 'WebGPU' : 'Canvas 2D'}` };
@@ -86,12 +64,14 @@ export const localEmu: RuntimeAdapter = {
       canSave: true,
       ownsInput: false,
       input() { /* keyboard arrives through rawKey (full mapping); avoid double input */ },
-      padInput(b: Btn, down: boolean) { const bit = 1 << LOGICAL[b]; touch = down ? touch | bit : touch & ~bit; push(); },
+      padInput(b: Btn, down: boolean) { const bit = 1 << FB[FULL_FROM_LOGICAL[b]]; touch = down ? touch | bit : touch & ~bit; push(); },
+      padState(full: number) { inputAt = performance.timeOrigin + performance.now(); pad = full; push(); },
       rawKey(code: string, down: boolean) {
         if (down) inputAt = performance.timeOrigin + performance.now();
-        const b = KEYMAP[code];
-        if (b === undefined) return;
-        keys = down ? keys | (1 << b) : keys & ~(1 << b); push();
+        const f = KEY_FULL[code];
+        if (f === undefined) return;
+        const bit = 1 << FB[f];
+        keys = down ? keys | bit : keys & ~bit; push();
       },
       ...(mousePort >= 0 ? {
         pointerMode: 'relative' as const,
@@ -108,7 +88,7 @@ export const localEmu: RuntimeAdapter = {
       stats: () => st,
       get onEnd() { return onEnd; },
       set onEnd(f) { onEnd = f; },
-      dispose() { cancelAnimationFrame(raf); emu.shutdown(); void paused; },
+      dispose() { emu.shutdown(); void paused; },
       emulator: emu,
     } as Session & { emulator: EmulatorSession };
   },

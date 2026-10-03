@@ -6,8 +6,9 @@ import { localBudgetMB } from '../mpc/router';
 import { storeStats, clearStore } from '../mpc/store';
 import { allSaves, clearSaves } from '../mpc/saves';
 import { games, removeUserData } from '../games/catalog';
+import { ic } from '../components/icons';
 
-const TABS = [['general', 'General'], ['performance', 'Performance'], ['cloud', 'Cloud Gaming'], ['controls', 'Controls'], ['display', 'Display'], ['storage', 'Storage'], ['about', 'About']] as const;
+const TABS = [['general', 'General'], ['performance', 'Performance'], ['cloud', 'Cloud Gaming'], ['controls', 'Controls'], ['display', 'Display'], ['storage', 'Storage'], ['saves', 'Saves'], ['about', 'About']] as const;
 type Tab = (typeof TABS)[number][0];
 
 function row(label: string, hint: string, control: HTMLElement | string): HTMLElement {
@@ -61,6 +62,19 @@ const panels: Record<Tab, (p: HTMLElement) => void | Promise<void>> = {
     };
     p.append(
       row('Cloud Endpoint', 'Your Mishrin cloud broker. Leave empty to play only on this device.', f),
+      (() => {
+        // Sign-in is only needed when the cloud runs with AUTH_REQUIRED (device tokens issued for an access key).
+        const a = h('div', 'actions'); a.style.flex = '1 1 320px';
+        a.innerHTML = `<label class="field"><input type="password" placeholder="Access key" aria-label="Cloud access key" autocomplete="off"></label><button class="btn btn-sm">Sign in</button><span class="hint" role="status"></span>`;
+        const key = a.querySelector('input')!, st = a.querySelector('span')!;
+        import('../cloud/identity').then(({ deviceToken }) => { st.textContent = deviceToken() ? 'Signed in on this device.' : 'Not signed in (only needed if your cloud requires it).'; });
+        a.querySelector('button')!.onclick = async () => {
+          const { signIn } = await import('../cloud/identity');
+          if (!settings.cloudEndpoint) { st.textContent = 'Enter an endpoint first.'; return; }
+          try { await signIn(key.value.trim()); key.value = ''; st.textContent = 'Signed in on this device.'; } catch (e) { st.textContent = (e as Error).message; }
+        };
+        return row('Cloud Sign-in', 'Your cloud may require an access key. Saves and uploads are then tied to this signed-in device.', a);
+      })(),
       row('Cloud Quality', 'Auto adapts resolution and bitrate to your network in real time.', pick('cloudQuality', [['auto', 'Auto'], ['performance', 'Performance'], ['balanced', 'Balanced'], ['quality', 'Quality']])),
       row('Idle Shutdown', 'Ends cloud sessions after inactivity to free resources.', pick('idleShutdownMin', [[5, '5 min'], [10, '10 min'], [20, '20 min'], [30, '30 min']])),
     );
@@ -99,6 +113,35 @@ const panels: Record<Tab, (p: HTMLElement) => void | Promise<void>> = {
       const b = h('button', 'btn btn-sm', g.user ? 'Remove' : 'Remove file');
       b.onclick = async () => { await removeUserData(g); toast(`${g.title} removed`); render('storage'); };
       p.append(row(esc(g.title), g.user ? 'Added by you' : 'Your attached file', b));
+    }
+  },
+  async saves(p) {
+    const { listSaves, exportSave, importSave, deleteSave, PROVIDER_LABEL } = await import('../saves/manager');
+    const imp = h('input'); imp.type = 'file'; imp.accept = '.msave'; imp.hidden = true;
+    const ib = h('button', 'btn btn-sm', `${ic.upload}Import save`); ib.onclick = () => imp.click();
+    imp.onchange = async () => {
+      const f = imp.files?.[0]; if (!f) return;
+      try { const e = await importSave(f); toast(`Imported ${PROVIDER_LABEL[e.provider]} save for ${e.title}`); render('saves'); } catch (e) { toast((e as Error).message, 5000); }
+    };
+    p.append(row('Saves', 'Save states, memory cards, game data and cloud saves in one place. Export makes a portable .msave file.', ib), imp);
+    const list = await listSaves();
+    if (!list.length) p.append(row('No saves yet', 'Use Save State in the in-game menu, or save inside a game.', ''));
+    for (const e of list) {
+      const acts = h('div', 'actions');
+      const ex = h('button', 'btn btn-sm', 'Export'); ex.dataset.act = 'export';
+      ex.onclick = async () => {
+        try {
+          const blob = await exportSave(e);
+          const a = h('a'); a.href = URL.createObjectURL(blob); a.download = `${e.gameId}-${e.provider}.msave`; a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+        } catch (err) { toast((err as Error).message, 5000); }
+      };
+      const del = h('button', 'btn btn-sm', 'Delete'); del.dataset.act = 'delete';
+      del.onclick = async () => { await deleteSave(e).catch(err => toast((err as Error).message)); toast('Save deleted'); render('saves'); };
+      acts.append(ex, del);
+      const r = row(`${esc(e.title)} <small class="badge">${PROVIDER_LABEL[e.provider]}</small>`, `${esc(e.kind)} · ${fmtBytes(e.size)}${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}`, acts);
+      r.dataset.save = `${e.provider}:${e.gameId}`;
+      p.append(r);
     }
   },
   async about(p) {

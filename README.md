@@ -4,23 +4,28 @@ A browser game console powered by the **Mishrin Paradoxical Computer (MPC)** orc
 `Open → choose game → Play.` Only games, controller-first, local or cloud chosen automatically.
 
 ```
-Console UI → MPC (probe · plan · store · predict · reclaim) → RuntimeAdapter
-                                                         ├─ LocalWASM  (MPC Framebuffer ABI, worker + OffscreenCanvas)
-                                                         ├─ Web / WebGPU (sandboxed iframe)
-                                                         ├─ Cloud      (WebRTC stream from an isolated node)
-                                                         └─ registerAdapter(...) for future engines
+files / folder → universal detector → runtime registry → resolver (browser → local emulator → cloud) → adapter → Session
+                  src/runtimes/        (status from live device + cloud worker reports, never hardcoded)
+LOCAL   Browser (WASM · HTML5 · WebGPU)     Mishrin P1 (PCSX-ReARMed → WASM)
+CLOUD   Windows (Wine + DXVK)   PS2-class (PCSX2 profile)   PS3-class (RPCS3 profile)   → scheduler → isolated GPU workers → WebRTC
 ```
+
+Architecture: [docs/universal-runtime-architecture.md](docs/universal-runtime-architecture.md) · protocol: [server/PROTOCOL.md](server/PROTOCOL.md) · deployment: [deploy/](deploy/)
 
 ## What runs where (tested)
 
 | Content | Runs | Status |
 |---|---|---|
-| HTML5 / MPC WASM games | this device | Working |
-| PS1-class discs (CUE/BIN, ISO, CHD, EXE, M3U) — **Mishrin P1** | this device, files never leave it | Working · see [docs/EMULATION.md](docs/EMULATION.md) |
-| PS2-class — Mishrin P2 | — | Experimental, not in this build (detected and labelled) |
-| PS3/PS4-class — Mishrin P3/P4 | — | Research only (detected and labelled) |
-| Windows games (Win32, D3D9/11 via DXVK, 32/64-bit) | cloud worker (Wine) | Working on the tested targets · see [docs/WINDOWS-CLOUD.md](docs/WINDOWS-CLOUD.md) |
+| HTML5 / MPC WASM games | this device | **Ready** |
+| PS1-class discs (CUE/BIN, ISO, CHD, EXE, M3U) — **Mishrin P1** | this device, files never leave it | **Ready** (original test program; see [docs/EMULATION.md](docs/EMULATION.md)) |
+| Windows games (Win32, D3D9/11 via DXVK, 32/64-bit) | cloud worker (Wine) | **Ready** on the tested targets; availability = deployed workers ([docs/WINDOWS-CLOUD.md](docs/WINDOWS-CLOUD.md)) |
+| PS2-class — Mishrin P2 | cloud worker (PCSX2 profile) | **In development**: detection, upload, scheduling and worker profile tested with a *mock* emulator; no real PCSX2 run |
+| PS3-class — Mishrin P3 Cloud | cloud GPU worker (RPCS3 profile) | **Architecture ready · runtime not deployed**: full pipeline tested with a *mock* RPCS3 |
+| PS4-class — Mishrin P4 | — | Research (detection only) |
 | Linux titles | — | Not implemented (the console says so) |
+
+User-provided, never shipped: games; PS1 BIOS (optional); PS2 BIOS and PS3 system software (installed on the worker by
+its operator). PS2/PS3-class games are uploaded only to the player's own cloud, only after explicit consent.
 
 **Licensing:** the Mishrin P1 core is PCSX-ReARMed (**GPL-2.0-or-later**). Its complete corresponding source, the GPL text
 and a notice ship next to the core in `public/cores/p1/`. Read [emulators/p1/LICENSE-NOTICE.md](emulators/p1/LICENSE-NOTICE.md)
@@ -43,14 +48,17 @@ test (see below).
 
 | Suite | Command | Checks |
 |---|---|---|
-| Console logic | `npm run test:unit` | 20 |
-| Console in Chromium | `python3 tests/e2e.py` (preview + `npm run cloud` running) | 38 |
+| Console logic: routing, registry, resolver, input mapping, `.msave`, detection | `npm run test:unit` | 45 |
+| Console in Chromium (incl. Saves, `/mishrin-console/` sub-path, stream stats) | `python3 tests/e2e.py` (preview + a dev scheduler on :8788) | 42 |
 | Emulation logic (detection, optimizer, WASI sandbox) | `npm run test:emu-unit` | 29 |
 | Real P1 core (V8) | `npm run test:emu-core` | 30 |
-| P1 in Chromium | `npm run test:emu-browser` | 32 |
-| Cloud scheduler (fake workers) | `npm run test:scheduler` | 37 |
-| Windows worker (sandbox, cache, saves) | `npm run test:worker` (root) | 25 |
-| Windows end-to-end (2 real workers) | `npm run test:windows` (root) | 34 |
+| P1 in Chromium (incl. runtime status) | `npm run test:emu-browser` | 33 |
+| Cloud scheduler: queue, session tokens, Windows protocol, failure, reconnection | `node tests/cloud/scheduler.test.mjs` | 44 |
+| Universal runtimes: uploads, inspection, PS2/PS3 worker protocol (mock workers), auth, saves API | `node tests/cloud/universal.test.mjs` | 51 |
+| Worker: sandbox, layers, saves, emulator profiles | `npm run test:worker` (root) | 35 |
+| End-to-end, 2 real workers: Windows titles + PS3/PS2 via **mock** emulators | `npm run test:windows` (root) | 44 |
+
+`npm run test:scheduler` runs both scheduler suites.
 
 ## Quick start
 

@@ -8,6 +8,7 @@ import { ic } from '../components/icons';
 import { esc, h, toast } from '../components/ui';
 import { focusFirst, onSection, padConnected } from '../components/nav';
 import { planFor } from '../mpc';
+import { descriptorFor, MATURITY_LABEL } from '../runtimes/registry';
 import { settings, onSettings } from './settings-store';
 import { enterFullscreen } from './fullscreen';
 
@@ -116,14 +117,13 @@ export function playGame(g: Game): void {
 }
 
 // ---------------------------------------------------------------- Game detail
-const EMU_NAME: Record<string, string> = { p1: 'Mishrin P1', p2: 'Mishrin P2', p3: 'Mishrin P3', p4: 'Mishrin P4' };
-const EMU_COMPAT: Record<string, string> = { p1: 'Compatibility: Working', p2: 'Compatibility: Experimental', p3: 'Compatibility: Research', p4: 'Compatibility: Research' };
 const fmtSize = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`);
 const detail: View = async (el, id) => {
   const g = byId(id);
   if (!g) { el.innerHTML = `<div class="empty">Game not found. <a class="btn btn-sm" href="#/library">Open Library</a></div>`; return; }
   const p = await planFor(g);
   const ready = !p.blocked;
+  const rt = descriptorFor(g);
   el.innerHTML = `<section class="detail">
 <div class="hero-art"><img src="${esc(artUrl(g))}" alt="" decoding="async"></div>
 <a class="btn btn-sm backbtn" href="#/home" data-act="back">${ic.back}Back</a>
@@ -133,8 +133,8 @@ const detail: View = async (el, id) => {
   <p class="desc">${esc(g.description)}</p>
   <div class="badges">
     ${g.controller !== false ? `<span class="badge">${ic.pad}Controller Support</span>` : ''}
-    ${g.emu ? `<span class="badge">${ic.chip}${EMU_NAME[g.emu.platform]}</span><span class="badge">${ic.file}${g.emu.format.toUpperCase()} · ${fmtSize(g.emu.size)}</span><span class="badge">${EMU_COMPAT[g.emu.platform]}</span>`
-      : `<span class="badge">${ic.cloud}Local / Cloud Auto</span><span class="badge">${ic.anywhere}Play Anywhere</span>`}
+    ${rt ? `<span class="badge" data-badge="runtime">${ic.chip}${esc(rt.name)} · ${esc(rt.platformLabel)}</span><span class="badge" data-badge="where">${rt.where.includes('local') && rt.maturity === 'ready' ? 'Local' : 'Cloud'}${g.emu?.store === 'cloud' ? ' · uploaded by you' : ''}</span><span class="badge" data-badge="maturity">${MATURITY_LABEL[rt.maturity]}</span>` : ''}
+    ${g.emu ? `<span class="badge">${ic.file}${esc(g.emu.format.toUpperCase())} · ${fmtSize(g.emu.size)}</span>` : rt?.id === 'browser' ? `<span class="badge">${ic.cloud}Local / Cloud Auto</span><span class="badge">${ic.anywhere}Play Anywhere</span>` : ''}
   </div>
   <div class="actions" data-actions></div>
   ${p.blocked && p.blocked.code !== 'no-file' ? `<p class="note warn">${esc(p.blocked.message)}</p>` : ''}

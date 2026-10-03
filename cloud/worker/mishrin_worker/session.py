@@ -1,4 +1,5 @@
-"""One game session: prepare layers → sandbox → display/audio → Wine → stream, with watchdog, saves and cleanup."""
+"""One game session: prepare layers → sandbox → display/audio → game process (Wine or an emulator profile) → stream,
+with watchdog, saves and cleanup."""
 import base64
 import json
 import os
@@ -7,8 +8,8 @@ import time
 import traceback
 
 from . import savelayer
-from .layers import dll_overrides
-from .manifest import manifest_hash, validate, win_path
+from .manifest import manifest_hash, validate
+from .profiles import profile_for
 from .sandbox import Sandbox
 
 STATES = ('preparing', 'launching', 'streaming', 'disconnected', 'restarting', 'ending', 'ended')
@@ -21,6 +22,7 @@ class Session:
         self.manifest = validate(msg['manifest'], allow_network=False)  # defence in depth: re-validate on the worker
         if manifest_hash(self.manifest) != msg.get('manifestHash', manifest_hash(self.manifest)):
             raise ValueError('manifest hash mismatch')
+        self.profile = profile_for(worker.profiles, self.manifest)  # Windows/Wine or an emulator (RPCS3, PCSX2, …)
         self.req = self.manifest['requirements']
         disp = self.manifest['display']
         self.screen = (int(disp.get('width', 1280)) // 2 * 2, int(disp.get('height', 720)) // 2 * 2)
@@ -59,13 +61,13 @@ class Session:
         t0 = time.time()
         self.layer_hash, layer = self.w.store.acquire_layer(self.manifest)
         self.log(f'game layer ready ({"reused" if self.w.store.stats["layers_reused"] else "built"}) in {time.time() - t0:.2f}s')
-        prefix = self.w.layers.ensure(self.log)
+        prefix = self.profile.runtime_layer(self.log)
         self.sb.prepare_storage()
         if self.restore_ref:
             blob = self.w.sched.fetch_save(self.restore_ref, self.id)
             n = savelayer.restore(blob, self.sb.dir, cfg.game_uid)
             self.log(f'restored save layer ({n} files)')
-        self.sb.mount_layers(prefix, layer)
+        self.sb.mount_layers(prefix, layer, self.profile.game_mount)
         self.state = 'launching'
         self.sb.start_display(*self.screen)
         # MISHRIN_AUDIO=silence: diagnostic/headless mode — stream generated silence instead of the game's audio
@@ -74,7 +76,7 @@ class Session:
         self.inj = Injector(self.display, self.manifest['controllerMap'])
         self._launch_game()
         self._wait_window(cfg.window_timeout)
-        self.last_save_mtime = savelayer.newest_mtime(self.sb.dir)
+        self.last_save_mtime = savelayer.newest_mtime(self.sb.dir, self.profile.save_include)
         self.stream = self._new_stream(self.offer)
         self.state = 'streaming'
         threading.Thread(target=self._watchdog, name=f'watchdog-{self.id[:8]}', daemon=True).start()
@@ -82,22 +84,14 @@ class Session:
         return self.stream.answer
 
     def _launch_game(self):
-        m, cfg = self.manifest, self.w.cfg
-        env = {
-            'HOME': '/home/player', 'USER': 'player', 'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8',
-            'WINEPREFIX': '/home/player/prefix', 'WINEDEBUG': '-all', 'DISPLAY': f':{self.display}',
-            'XAUTHORITY': '/home/player/.Xauthority',
-            'WINEDLLOVERRIDES': dll_overrides(m['graphics'], bool(self.w.layers.dxvk), bool(self.w.layers.vkd3d)),
-            'DXVK_LOG_LEVEL': 'info', 'DXVK_STATE_CACHE_PATH': '/home/player/prefix', 'VKD3D_SHADER_CACHE_PATH': '/home/player/prefix',
-        }
+        # argv only — the executable/boot file comes from the validated manifest and the worker's own profile, never from the browser.
+        argv, env, wd = self.profile.launch_spec(self)
         if self.pulse:
             env['PULSE_SERVER'] = 'unix:/tmp/pulse/native'
-        wd = '/home/player/prefix/drive_c/Game' + ('/' + m['workingDirectory'] if m['workingDirectory'] else '')
-        # argv only — the executable comes from the validated manifest, never from the browser.
-        argv = ['/usr/bin/wine', win_path(m['executable']), *m['args']]
-        self.game = self.sb.launch(argv, env, wd, self.pulse)
+        self.game = self.sb.launch(argv, env, wd, self.pulse, extra_ro=self.profile.extra_ro)
         self.game_started = time.time()
-        self.log(f'launched {m["executable"]} (graphics={m["graphics"]})')
+        what = self.manifest.get('executable') or f'{self.profile.name} {self.manifest["boot"]}'
+        self.log(f'launched {what} ({self.profile.kind})')
 
     def _wait_window(self, timeout):
         deadline = time.time() + timeout
@@ -113,7 +107,7 @@ class Session:
         from .stream import Stream
         st = Stream(self.display, self.screen, offer, self.prefs, self.ice, self.pulse,
                     on_input=self._on_input, on_ctl=self._on_ctl, on_state=self._on_conn_state, log=self.log)
-        st.send_ctl(json.dumps({'t': 'caps', 'save': True, 'kind': 'save-data'}))  # queued until the channel opens
+        st.send_ctl(json.dumps({'t': 'caps', 'save': True, 'kind': 'save-data', 'pad': self.profile.pad}))  # queued until the channel opens
         return st
 
     # ------------------------------------------------------------------ input / control
@@ -190,12 +184,12 @@ class Session:
             if not was:
                 self.sb.cg.freeze(True)  # consistent snapshot: no writes while copying
             try:
-                blob, raw, files = savelayer.snapshot(self.sb.dir)
+                blob, raw, files = savelayer.snapshot(self.sb.dir, self.profile.save_include, self.profile.save_exclude)
             finally:
                 if not was:
                     self.sb.cg.freeze(False)
         ref = self.w.sched.store_save(self.id, blob, raw, files, kind)
-        self.last_save_mtime = savelayer.newest_mtime(self.sb.dir)
+        self.last_save_mtime = savelayer.newest_mtime(self.sb.dir, self.profile.save_include)
         self.last_autosave = time.time()
         self.log(f'{kind} save {ref["ref"][:12]} {len(blob)} B (raw {raw} B, {files} files)')
         return ref
@@ -210,7 +204,7 @@ class Session:
             self.sb.unmount_layers()
             self.sb.reset_uppers()
             savelayer.restore(blob, self.sb.dir, self.w.cfg.game_uid)
-            self.sb.mount_layers(self.w.layers.prefix(), self.w.store.layer_path(self.layer_hash))
+            self.sb.mount_layers(self.profile.current_layer(), self.w.store.layer_path(self.layer_hash), self.profile.game_mount)
             self._launch_game()
             self._wait_window(self.w.cfg.window_timeout)
             self.state = 'streaming'
@@ -278,7 +272,7 @@ class Session:
                         missing_since = None
                     continue
                 # periodic autosave (only if save data changed) keeps reassignment loss small
-                if now - self.last_autosave > cfg.autosave_s and savelayer.newest_mtime(self.sb.dir) > self.last_save_mtime:
+                if now - self.last_autosave > cfg.autosave_s and savelayer.newest_mtime(self.sb.dir, self.profile.save_include) > self.last_save_mtime:
                     self.save('auto')
             except Exception as e:
                 self.log(f'watchdog error: {e}\n{traceback.format_exc()}')
@@ -316,7 +310,7 @@ class Session:
             if self.sb.mounts and self.paused:
                 self.sb.cg.freeze(False)
                 self.paused = False
-            if os.path.isdir(self.sb.dir) and savelayer.newest_mtime(self.sb.dir) > self.last_save_mtime:
+            if os.path.isdir(self.sb.dir) and savelayer.newest_mtime(self.sb.dir, self.profile.save_include) > self.last_save_mtime:
                 self.sb.stop_game()
                 self.save('auto')
         except Exception as e:
@@ -333,6 +327,9 @@ class Session:
 
     def graphics_backend(self):
         """Which translation layer the running game actually loaded (from its log), e.g. 'DXVK 2.6.1 on llvmpipe'."""
+        if self.profile.kind == 'emulator':
+            i = self.profile.info()
+            return f"{i['name']} {i['version']}{' (mock)' if i['mock'] else ''}".strip()
         if getattr(self, '_gfx', None):
             return self._gfx
         try:

@@ -14,6 +14,16 @@ Console (unchanged UI) ─ automatic cloud routing ─▶ Scheduler (server/brok
             └─ input: data channel → XTest (allow-listed keys, pointer + buttons + wheel, controller → controllerMap)
 ```
 
+## Session profiles: Windows and emulator workers
+
+The worker runs one *profile* per session (`cloud/worker/mishrin_worker/profiles.py`): **Windows** (Wine prefix layer,
+game at `C:\Game`) or an **emulator** described by an `emulator.json` (RPCS3 for PS3-class, PCSX2 for PS2-class; the
+binary is bound read-only, the template home with the operator's firmware/BIOS is the overlay's lower layer, the game is
+mounted at `~/game`). Isolation, display, audio, streaming, input, save layers, watchdog and cleanup are shared.
+A worker advertises `ps3`/`ps2` only when the emulator **and** its firmware are installed. Real RPCS3/PCSX2 have not been
+run here; the profile path is tested end-to-end with mock emulators (`cloud/test-games/emulators/`). Templates and
+installation notes: `cloud/worker/emulators/`.
+
 ## Compatibility targets (controlled, all tested end-to-end)
 
 | Target | Test title | Result |
@@ -84,7 +94,7 @@ Then add a catalog entry with `"runtime": "x64-win", "url": "cloud:<id>"` and se
 * No hardware GPU or hardware encoder was available, so those paths were not tested. Encoder selection prefers them
   automatically when GStreamer can initialise them.
 * AV1 needs `rtpav1pay` (gst-plugins-rs), which is not packaged on Ubuntu 24.04; the worker then offers H.264/VP8/VP9 only.
-* Controllers are mapped to keyboard keys (`controllerMap`). Native XInput (a virtual gamepad through `/dev/uinput`) is not implemented.
+* Controllers are mapped to keyboard keys (`controllerMap`; emulator titles get the full 16-button pad). Native XInput / evdev (a virtual gamepad through `/dev/uinput`) is not implemented.
 * Save *state* on Windows titles means the game's save data (files and registry), not a RAM snapshot. Load restarts the game.
 * `saveKey` is a per-device capability, not an account system. Production use needs real user authentication.
 * Linux titles have no worker yet; the console says so.

@@ -2,11 +2,7 @@ import type { Caps } from './probe';
 import type { Game } from '../games/types';
 import { CLOUD_ONLY, KNOWN_RUNTIMES, EMU_RUNTIMES } from '../games/types';
 
-const EMU_UNAVAILABLE: Record<string, string> = {
-  p2: 'Mishrin P2 is experimental and not available in this build.',
-  p3: 'Mishrin P3 is a research target; it cannot run in a browser today.',
-  p4: 'Mishrin P4 is a research target; it cannot run in a browser today.',
-};
+import { descriptorFor } from '../runtimes/registry';
 import type { Settings } from '../ui/settings-store';
 
 export type Backend = 'local-wasm' | 'local-web' | 'local-webgpu' | 'local-emu' | 'cloud';
@@ -41,10 +37,17 @@ function weakFor(game: Game, caps: Caps, s: Settings): string | null {
 export function plan(game: Game, caps: Caps, s: Settings): Plan {
   if (!KNOWN_RUNTIMES.has(game.runtime)) return { routes: [], blocked: { code: 'unsupported', message: `This title's runtime "${game.runtime}" is not supported.` } };
   if (!game.url && !game.chunks?.length) return { routes: [], blocked: { code: 'no-file', message: 'Game file not added yet.' } };
-  // Console emulation runs only on this device (the user's files are never uploaded); unavailable cores say so.
+  // Resolver order (docs/universal-runtime-architecture.md): can the browser run it → local emulator → cloud.
+  // Console emulation: P1 runs on this device (files never uploaded). P2/P3 run only on a cloud worker, and only
+  // for titles the player explicitly uploaded to their own cloud (url "upload:<id>").
   if (EMU_RUNTIMES.has(game.runtime)) {
-    if (game.runtime !== 'p1') return { routes: [], blocked: { code: 'unsupported', message: EMU_UNAVAILABLE[game.runtime] } };
-    return caps.wasm ? { routes: [{ backend: 'local-emu', reason: 'Mishrin P1 · WebAssembly' }] } : { routes: [], blocked: { code: 'unsupported', message: 'This browser lacks WebAssembly.' } };
+    const d = descriptorFor(game)!;
+    if (game.runtime === 'p1') return caps.wasm ? { routes: [{ backend: 'local-emu', reason: 'Mishrin P1 · WebAssembly' }] } : { routes: [], blocked: { code: 'unsupported', message: 'This browser lacks WebAssembly.' } };
+    if (!d.cloudRuntimes?.length) return { routes: [], blocked: { code: 'unsupported', message: `${d.name} is a research target (${d.note})` } };
+    if (!game.url.startsWith('upload:')) return { routes: [], blocked: { code: 'unsupported', message: `${d.name} (${d.platformLabel}) runs only on a cloud worker. Upload the game to your cloud from Upload Game first.` } };
+    if (!caps.net.online) return { routes: [], blocked: { code: 'offline', message: 'This title streams from your cloud. You are offline.' } };
+    if (!cloudUsable(caps, s)) return { routes: [], blocked: { code: 'needs-cloud', message: 'Add your cloud endpoint in Settings → Cloud Gaming.' } };
+    return { routes: [{ backend: 'cloud', reason: `${d.name} · ${d.engine}` }] };
   }
 
   const cloud = cloudUsable(caps, s);

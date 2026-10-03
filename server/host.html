@@ -8,6 +8,8 @@
 // (e.g. Wine/Proton or a container + GStreamer webrtcbin); see server/PROTOCOL.md.
 const BROKER = new URLSearchParams(location.search).get('broker') || location.origin;
 const CAPACITY = +(new URLSearchParams(location.search).get('capacity') || 4);
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const tq = (u) => TOKEN ? `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(TOKEN)}` : u;
 const log = m => { const l = document.getElementById('log'); l.textContent += '\n' + new Date().toISOString().slice(11, 19) + ' ' + m; };
 const sessions = new Map();
 
@@ -15,7 +17,7 @@ async function hash(buf) { return [...new Uint8Array(await crypto.subtle.digest(
 
 async function fetchPackage(game) {
   if (game.cas) {
-    const r = await fetch(`${BROKER}/v1/packages/${game.cas}`);
+    const r = await fetch(tq(`${BROKER}/v1/packages/${game.cas}`));
     if (r.ok) { const b = await r.arrayBuffer(); if (await hash(b) === game.cas) return b; }
   }
   if (game.url && /^https?:/.test(game.url)) {
@@ -124,12 +126,12 @@ function stop(id, why) {
 }
 
 let hostId;
-const post = (what, body) => fetch(`${BROKER}/v1/hosts/${hostId}/${what}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+const post = (what, body) => fetch(tq(`${BROKER}/v1/hosts/${hostId}/${what}`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 async function main() {
   for (;;) {
     try {
-      if (!hostId) { const r = await fetch(`${BROKER}/v1/hosts/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runtimes: ['wasm'], capacity: CAPACITY }) }); hostId = (await r.json()).id; log('registered ' + hostId.slice(0, 8)); window.__nodeReady = true; }
-      const r = await fetch(`${BROKER}/v1/hosts/${hostId}/poll`);
+      if (!hostId) { const r = await fetch(tq(`${BROKER}/v1/hosts/register`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runtimes: ['wasm'], capacity: CAPACITY }) }); hostId = (await r.json()).id; log('registered ' + hostId.slice(0, 8)); window.__nodeReady = true; }
+      const r = await fetch(tq(`${BROKER}/v1/hosts/${hostId}/poll`));
       if (r.status === 404) { hostId = null; continue; }
       if (r.status !== 200) continue;
       const m = await r.json();
@@ -138,6 +140,6 @@ async function main() {
     } catch { await new Promise(r => setTimeout(r, 2000)); }
   }
 }
-addEventListener('pagehide', () => { if (hostId) navigator.sendBeacon(`${BROKER}/v1/hosts/${hostId}/bye`, '{}'); });
+addEventListener('pagehide', () => { if (hostId) navigator.sendBeacon(tq(`${BROKER}/v1/hosts/${hostId}/bye`), '{}'); });
 main();
 </script></body></html>

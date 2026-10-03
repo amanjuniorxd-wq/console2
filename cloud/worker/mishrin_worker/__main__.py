@@ -22,6 +22,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from .layers import Layers
+from .profiles import load_profiles, ready_runtimes
 from .sandbox import CG_ROOT, Cgroup
 from .session import Session
 from .store import Store
@@ -39,6 +40,7 @@ class Config:
     game_uid: int = 20000
     display_base: int = 100
     dxvk_dir: str = '/opt/mishrin/layers/dxvk-2.6.1'
+    emulators_dir: str = '/opt/mishrin/emulators'
     vkd3d_dir: str = '/opt/mishrin/layers/vkd3d-proton-2.14.1'
     cache_gb: float = 200
     window_timeout: float = 90
@@ -109,6 +111,7 @@ class Worker:
         self.sched = SchedulerClient(cfg, self)
         self.store = Store(cfg.data, self.sched.fetch_chunk, int(cfg.cache_gb * 1024 ** 3), owner_uid=cfg.game_uid)
         self.layers = Layers(cfg.data, cfg.game_uid, cfg.dxvk_dir, cfg.vkd3d_dir)
+        self.profiles = load_profiles(self, cfg.emulators_dir)
         self.sessions = {}
         self.lock = threading.Lock()
         self.stopping = threading.Event()
@@ -132,7 +135,8 @@ class Worker:
             pass
         mem = int(open('/proc/meminfo').read().split()[1]) // 1024
         return {
-            'name': self.cfg.name, 'version': VERSION, 'runtimes': ['x64-win', 'x86'], 'capacity': self.cfg.capacity,
+            'name': self.cfg.name, 'version': VERSION, 'runtimes': ready_runtimes(self.profiles), 'capacity': self.cfg.capacity,
+            'emulators': [p.info() for p in self.profiles if p.kind == 'emulator'],
             'resources': {'ramMB': mem, 'cpus': os.cpu_count(), 'gpu': vk, 'renderNodes': len(glob.glob('/dev/dri/renderD*'))},
             'encoders': enc, 'hardwareEncoders': [e for e in enc if ENCODERS[e][1]],
             'codecs': sorted({ENCODERS[e][0] for e in enc}),
@@ -326,12 +330,15 @@ def main():
     ap.add_argument('--game-uid', type=int, default=int(os.environ.get('MISHRIN_GAME_UID', '20000')))
     ap.add_argument('--hang-timeout', type=float, default=float(os.environ.get('MISHRIN_HANG_TIMEOUT', '20')))
     ap.add_argument('--autosave', type=float, default=float(os.environ.get('MISHRIN_AUTOSAVE_S', '60')))
+    ap.add_argument('--emulators', default=os.environ.get('MISHRIN_EMULATORS', '/opt/mishrin/emulators'),
+                    help='directory of emulator profiles (one emulator.json per subdirectory)')
     ap.add_argument('--reconnect-grace', type=float, default=float(os.environ.get('MISHRIN_RECONNECT_GRACE', '60')))
     a = ap.parse_args()
     if os.geteuid() != 0:
         sys.exit('mishrin_worker must run as root (it creates mounts, cgroups and drops each game to an unprivileged uid)')
     cfg = Config(scheduler=a.scheduler, token=a.token, name=a.name, data=a.data, capacity=a.capacity, display_base=a.display_base,
-                 game_uid=a.game_uid, hang_timeout=a.hang_timeout, autosave_s=a.autosave, reconnect_grace=a.reconnect_grace)
+                 game_uid=a.game_uid, hang_timeout=a.hang_timeout, autosave_s=a.autosave, reconnect_grace=a.reconnect_grace,
+                 emulators_dir=a.emulators)
     w = Worker(cfg)
     signal.signal(signal.SIGTERM, lambda *_: (w.shutdown(), sys.exit(0)))
     signal.signal(signal.SIGINT, lambda *_: (w.shutdown(), sys.exit(0)))

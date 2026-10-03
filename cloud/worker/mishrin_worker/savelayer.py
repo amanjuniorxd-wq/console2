@@ -25,13 +25,13 @@ def _roots(session_dir):
     return {'prefix': os.path.join(session_dir, 'prefix-upper'), 'game': os.path.join(session_dir, 'game-upper')}
 
 
-def _excluded(rel):
-    return any(fnmatch.fnmatch('/' + rel, pat) or fnmatch.fnmatch(rel, pat) for pat in EXCLUDE)
+def _excluded(rel, exclude=None):
+    return any(fnmatch.fnmatch('/' + rel, pat) or fnmatch.fnmatch(rel, pat) for pat in (exclude or EXCLUDE))
 
 
-def newest_mtime(session_dir):
+def newest_mtime(session_dir, include=None):
     newest = 0.0
-    for tag, sub in INCLUDE:
+    for tag, sub in include or INCLUDE:
         base = os.path.join(_roots(session_dir)[tag], sub)
         if os.path.isfile(base):
             newest = max(newest, os.path.getmtime(base))
@@ -44,12 +44,13 @@ def newest_mtime(session_dir):
     return newest
 
 
-def snapshot(session_dir):
-    """Return (blob, raw_bytes, files) — deterministic member order for better dedup."""
+def snapshot(session_dir, include=None, exclude=None):
+    """Return (blob, raw_bytes, files) — deterministic member order for better dedup.
+    include/exclude: the session profile's save scope (Windows default above; emulator profiles declare their own)."""
     buf = io.BytesIO()
     raw = files = 0
     with tarfile.open(fileobj=buf, mode='w', format=tarfile.PAX_FORMAT) as tar:
-        for tag, sub in INCLUDE:
+        for tag, sub in include or INCLUDE:
             root = _roots(session_dir)[tag]
             base = os.path.join(root, sub)
             if os.path.isfile(base):
@@ -62,7 +63,7 @@ def snapshot(session_dir):
             for p in paths:
                 rel = os.path.relpath(p, root).replace(os.sep, '/')
                 st = os.lstat(p)
-                if not os.path.isfile(p) or os.path.islink(p) or _excluded(rel):  # skips overlay whiteouts too
+                if not os.path.isfile(p) or os.path.islink(p) or _excluded(rel, exclude):  # skips overlay whiteouts too
                     continue
                 ti = tarfile.TarInfo(f'{tag}/{rel}')
                 ti.size, ti.mtime, ti.mode = st.st_size, int(st.st_mtime), 0o644
