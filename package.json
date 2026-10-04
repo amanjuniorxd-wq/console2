@@ -30,5 +30,8 @@
     "wabt": "^1.0.39"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "fflate": "^0.8.2"
+  }
 }
