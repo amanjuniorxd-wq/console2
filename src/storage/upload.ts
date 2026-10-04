@@ -48,7 +48,7 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
     opts.signal?.throwIfAborted();
   }
   const d = await call('/api/uploads', { method: 'POST', body: JSON.stringify({ files: decl, title: opts.title }), signal: opts.signal });
-  if (d.state === 'complete') return { id: d.id, platform: d.platform, runtime: d.runtime, title: d.title };
+  if (d.state === 'complete') return { id: d.id, platform: d.platform, runtime: d.runtime, title: d.title, executable: d.executable, files: d.files };
   // Map each missing hash to one place it can be read from.
   const where = new Map<string, { blob: Blob; off: number }>();
   decl.forEach((f, i) => f.chunks.forEach((h, k) => { if (!where.has(h)) where.set(h, { blob: files[i].blob, off: k * CHUNK }); }));
