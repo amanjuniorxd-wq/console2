@@ -11,7 +11,7 @@ export interface UniversalDetection {
   ok: boolean;
   platform?: PlatformId;
   runtime?: RuntimeId;
-  kind?: 'browser-wasm' | 'browser-html' | 'windows-exe' | 'linux-elf' | 'console-image' | 'ps3-folder';
+  kind?: 'browser-wasm' | 'browser-html' | 'windows-exe' | 'linux-elf' | 'console-image' | 'ps3-folder' | 'windows-archive';
   format?: string;
   title?: string;
   serial?: string;
@@ -62,6 +62,20 @@ export async function detectAny(input: File[]): Promise<UniversalDetection> {
   const fail = (error: string): UniversalDetection => ({ ...res, error });
   if (!files.length) return fail('No file selected.');
   if (paths.some(p => !SAFE.test(p) || p.split('/').some(s => s === '..' || s === '.'))) return fail('Unsafe file name in the selection.');
+
+  // Archive upload: keep the archive as one browser file. The cloud Windows worker
+  // extracts ZIP/RAR and recursively selects the real executable, so the browser never
+  // has to select thousands of game files.
+  if (files.length === 1) {
+    const f = files[0];
+    const h = await head(f, 16);
+    const zip = h[0] === 0x50 && h[1] === 0x4b && (h[2] === 0x03 || h[2] === 0x05 || h[2] === 0x07);
+    const rar = h[0] === 0x52 && h[1] === 0x61 && h[2] === 0x72 && h[3] === 0x21 && h[4] === 0x1a && h[5] === 0x07;
+    if (zip || rar) {
+      return { ...res, ok: true, platform: 'windows', runtime: 'windows-cloud', kind: 'windows-archive',
+        format: zip ? 'zip' : 'rar', title: f.name.replace(/\.(zip|rar)$/i, ''), warnings: [] };
+    }
+  }
 
   // PS3-class game folder: PS3_GAME/PARAM.SFO + PS3_GAME/USRDIR/EBOOT.BIN
   const sfoAt = paths.findIndex(p => /(^|\/)PS3_GAME\/PARAM\.SFO$/i.test(p));
