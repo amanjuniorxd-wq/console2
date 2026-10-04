@@ -87,6 +87,14 @@ export function inspectUpload(files, store) {
     if (!p) throw new InspectError('PARAM.SFO is damaged.', 422);
     return { platform: 'ps3', boot: eboot.path, title: p.TITLE || '', serial: p.TITLE_ID || '', category: p.CATEGORY || '' };
   }
+  // ZIP/RAR archives are kept intact during upload. The Windows GPU worker extracts
+  // the archive in the session sandbox and recursively chooses the real PE executable.
+  if (files.length === 1) {
+    const f = files[0], h = reader(f).read(0, 16);
+    const zip = h.length >= 4 && h[0] === 0x50 && h[1] === 0x4b && [0x03, 0x05, 0x07].includes(h[2]);
+    const rar = h.length >= 7 && h[0] === 0x52 && h[1] === 0x61 && h[2] === 0x72 && h[3] === 0x21 && h[4] === 0x1a && h[5] === 0x07;
+    if (zip || rar) return { platform: 'windows', arch: 'auto', executable: '__AUTO__', archive: { path: f.path, format: zip ? 'zip' : 'rar' }, title: f.path.replace(/\.(zip|rar)$/i, '').split('/').pop() || '' };
+  }
   // Windows games are packages, not single files. Inspect every .exe candidate and
   // choose a deterministic launch executable: title/root matches first, then largest PE.
   const peCandidates = [];
