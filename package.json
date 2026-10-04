@@ -1,11 +1,11 @@
 {
   "name": "mishrin-console",
   "version": "1.0.0",
-  "description": "MISHRIN CONSOLE \u2014 browser game console powered by the Mishrin Paradoxical Computer (MPC)",
+  "description": "MISHRIN CONSOLE — browser game console powered by the Mishrin Paradoxical Computer (MPC)",
   "scripts": {
     "build:games": "clang --target=wasm32 -Os -msimd128 -mbulk-memory -nostdlib -ffreestanding -Wl,--no-entry -Wl,--strip-all -Wl,--export-memory -o public/games/ember-drift/ember-drift.wasm games-src/ember-drift.c && node scripts/hash-catalog.mjs",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node scripts/size-report.mjs",
+    "build": "vite build && node scripts/size-report.mjs",
     "preview": "vite preview --port 4173",
     "cloud": "node server/broker.mjs",
     "test": "npm run test:unit && npm run test:emu && npm run test:scheduler && python3 tests/e2e.py",
@@ -20,7 +20,8 @@
     "test:windows": "sudo python3 tests/cloud/e2e_windows.py",
     "test:real": "sudo python3 tests/real/e2e_real_ps2.py && sudo python3 tests/real/e2e_real_ps3.py",
     "test:real-ps2": "sudo python3 tests/real/e2e_real_ps2.py",
-    "test:real-ps3": "sudo python3 tests/real/e2e_real_ps3.py"
+    "test:real-ps3": "sudo python3 tests/real/e2e_real_ps3.py",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",
