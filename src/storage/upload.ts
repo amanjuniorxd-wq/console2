@@ -9,10 +9,11 @@
  */
 import { idb } from '../mpc/idb';
 import { base, idHeaders } from '../cloud/identity';
+import { unzipSync } from 'fflate';
 
 export const CHUNK = 4 * 1024 * 1024;
 export interface UploadFile { path: string; blob: Blob }
-export interface UploadResult { id: string; platform: string; runtime: string; title: string; serial?: string }
+export interface UploadResult { id: string; platform: string; runtime: string; title: string; serial?: string; executable?: string; files?: number }
 export interface Progress { phase: 'hashing' | 'uploading' | 'checking'; done: number; total: number; dedupBytes?: number }
 
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -73,5 +74,6 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
   await Promise.all([worker(), worker(), worker()]);
   opts.onProgress?.({ phase: 'checking', done: 1, total: 1 });
   const c = await call(`/api/uploads/${d.id}/complete`, { method: 'POST', body: '{}', signal: opts.signal });
-  return { id: c.id, platform: c.platform, runtime: c.runtime, title: c.title, serial: c.serial };
+  return { id: c.id, platform: c.platform, runtime: c.runtime, title: c.title, serial: c.serial, executable: c.executable, files: c.files };
 }
+\n/** Expand a Windows game folder or ZIP into relative-path files for the cloud uploader. */\nexport async function expandGameFiles(input: FileList | File[]): Promise<UploadFile[]> {\n  const selected = Array.from(input || []);\n  if (!selected.length) throw new Error('Choose a Windows game folder or ZIP file.');\n  const zips = selected.filter(f => /\.zip$/i.test(f.name));\n  if (zips.length > 1 || (zips.length && selected.length > 1)) throw new Error('Choose one ZIP file, or select a game folder — not both.');\n  if (zips.length === 1) {\n    const zip = zips[0];\n    const raw = new Uint8Array(await zip.arrayBuffer());\n    let entries: Record<string, Uint8Array>;\n    try { entries = unzipSync(raw); } catch { throw new Error('The ZIP file could not be opened.'); }\n    const out: UploadFile[] = [];\n    for (const [name, bytes] of Object.entries(entries)) {\n      const path = name.replaceAll('\\\\', '/').replace(/^\\/+/, '');\n      if (!path || path.endsWith('/') || path.startsWith('__MACOSX/')) continue;\n      const parts = path.split('/');\n      if (parts.some(p => !p || p === '.' || p === '..')) continue;\n      out.push({ path, blob: new File([bytes], parts[parts.length - 1] || 'file') });\n    }\n    if (!out.length) throw new Error('The ZIP contains no usable files.');\n    return out;\n  }\n  const out = selected.map((f, i) => {\n    const path = String((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name || `file-${i}`);\n    return { path: path.replaceAll('\\\\', '/'), blob: f };\n  }).filter(f => f.path && !f.path.endsWith('/'));\n  if (!out.length) throw new Error('The selected folder contains no files.');\n  return out;\n}\n
