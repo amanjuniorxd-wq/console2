@@ -19,7 +19,7 @@ const LEGAL = 'Use only games and BIOS files you own and are legally entitled to
 const maturityChip = (m: Maturity) => `<span class="badge maturity-${m}">${MATURITY_LABEL[m]}</span>`;
 
 // ------------------------------------------------------------------ Upload Game
-const ACCEPT_ALL = `${ACCEPT},.wasm,.html,.htm`;
+const ACCEPT_ALL = `${ACCEPT},.wasm,.html,.htm`; const ARCHIVE_ACCEPT = '.zip,.rar,application/zip,application/x-rar-compressed';
 
 export function upload(el: HTMLElement) {
   el.innerHTML = `<div class="page">
@@ -27,13 +27,16 @@ export function upload(el: HTMLElement) {
 <p class="note legal">${LEGAL}</p>
 <label class="dropzone" tabindex="0" data-autofocus>${ic.upload}<b>Choose game files</b><span>${esc(ACCEPT_ALL.replaceAll(',', ' '))} · select a CUE together with its BIN files</span>
 <input type="file" multiple accept="${ACCEPT_ALL}" hidden data-files></label>
-<div class="actions" style="margin-top:12px"><button class="btn btn-sm" data-folder>${ic.file}Choose a game folder</button><input type="file" hidden webkitdirectory multiple data-dir></div>
+<div class="actions" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px"><button class="btn btn-sm" data-folder>${ic.file}Choose a game folder</button><input type="file" hidden webkitdirectory multiple data-dir><button class="btn btn-sm" data-archive>${ic.upload}Upload ZIP / RAR</button><input type="file" hidden accept="${ARCHIVE_ACCEPT}" data-archive-input></div><p class="note">For large Windows games, ZIP/RAR is recommended. Mishrin uploads the archive as one file; the cloud worker extracts it and automatically searches for the game EXE.</p>
 <div class="detect" aria-live="polite"></div></div>`;
   const zone = el.querySelector<HTMLLabelElement>('.dropzone')!;
   const input = el.querySelector<HTMLInputElement>('[data-files]')!;
   const dir = el.querySelector<HTMLInputElement>('[data-dir]')!;
+  const archive = el.querySelector<HTMLButtonElement>('[data-archive]')!;
+  const archiveInput = el.querySelector<HTMLInputElement>('[data-archive-input]')!;
   const out = el.querySelector<HTMLElement>('.detect')!;
   el.querySelector<HTMLButtonElement>('[data-folder]')!.onclick = () => dir.click();
+  archive.onclick = () => archiveInput.click();
   zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
   const handle = async (files: File[]) => {
     out.innerHTML = '<p class="note">Checking files…</p>';
@@ -43,6 +46,7 @@ export function upload(el: HTMLElement) {
   };
   input.onchange = () => input.files?.length && handle([...input.files]);
   dir.onchange = () => dir.files?.length && handle([...dir.files]);
+  archiveInput.onchange = () => archiveInput.files?.length && handle([...archiveInput.files]);
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('over'); if (e.dataTransfer?.files.length) handle([...e.dataTransfer.files]); });
@@ -90,6 +94,7 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
       };
       return;
     }
+    if (d.kind === 'windows-archive' && !settings.cloudEndpoint) return disabled('Needs your cloud (Settings → Cloud Gaming)');
     if (rt.maturity === 'research' || !rt.cloudRuntimes?.length) return disabled('Research — not available');
     // PS2/PS3-class: cloud only, and only after the player explicitly authorizes the upload to *their* cloud.
     if (live.requires && !live.ok) acts.insertAdjacentHTML('beforeend', setupBox(rt, live));
@@ -97,7 +102,7 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
     // the emulator actually deployed decides which container formats it accepts (validated, not assumed)
     const fmts = (rt.cloudRuntimes || []).flatMap(r => report?.runtimes[r]?.emulators || []).filter(e => !e.mock && e.advertised !== false).flatMap(e => e.formats || []).map(f => f.toLowerCase());
     const ext = (d.paths[0] || '').split('.').pop()?.toLowerCase() || '';
-    if (fmts.length && d.files.length === 1 && ext && !fmts.includes(ext)) {
+    if (d.kind !== 'windows-archive' && fmts.length && d.files.length === 1 && ext && !fmts.includes(ext)) {
       acts.insertAdjacentHTML('beforeend', `<p class="note warn" data-format-refused>The ${esc(rt.platformLabel)} emulator on your cloud accepts ${esc(fmts.map(f => '.' + f).join(', '))}. Convert this .${esc(ext)} first (for CHD: <code>chdman extractdvd</code>).</p>`);
       return disabled(`.${ext} not supported by the deployed emulator`);
     }
