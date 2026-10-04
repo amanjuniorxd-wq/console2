@@ -1,10 +1,10 @@
 #!/usr/bin/python3
 """MOCK console emulator — a test double for the cloud worker's emulator profiles. It is NOT an emulator.
 
-It exercises everything a real RPCS3/PCSX2 session needs from the worker — firmware check, boot-file validation,
+It exercises everything a real PCSX2/PPSSPP session needs from the worker — firmware check, boot-file validation,
 an X11 window to stream, controller input through the profile's key bindings, save data under the emulator's home
 (captured by the cloud save layer), restore on the next launch — without emulating anything. Window title:
-    MOCK-P3 id=<title id> x=<px> y=<py> score=<n> loaded=<0|1> pad=<last button>
+    MOCK-PSP / MOCK-P2 id=<title id> x=<px> y=<py> score=<n> loaded=<0|1> pad=<last button>
 """
 import json
 import os
@@ -13,11 +13,11 @@ import sys
 
 from Xlib import X, XK, display
 
-mode = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--mode=')), 'ps3')
+mode = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--mode=')), 'psp')
 boot = sys.argv[-1]
 home = os.environ.get('HOME', '/tmp')
-FW = {'ps3': '.config/rpcs3/dev_flash/vsh/module/vsh.self', 'ps2': '.config/PCSX2/bios/mock-bios.bin'}[mode]
-if not os.path.isfile(os.path.join(home, FW)):
+FW = {'psp': None, 'ps2': '.config/PCSX2/bios/mock-bios.bin'}[mode]   # PSP: no firmware (the emulator implements it)
+if FW and not os.path.isfile(os.path.join(home, FW)):
     sys.exit(f'mock-emulator: firmware missing ({FW})')
 
 ident = 'UNKNOWN'
@@ -34,21 +34,22 @@ def iso_volume(path):
     return pvd[40:72].decode('latin1').strip() or 'DISC'
 
 
-if mode == 'ps3' and boot.lower().endswith('.iso'):
+if mode == 'psp' and boot.lower().endswith('.iso'):
     ident = iso_volume(boot)[:20]
-    save = os.path.join(home, '.config/rpcs3/dev_hdd0/home/00000001/savedata', ident, 'SAVE.DAT')
-elif mode == 'ps3':
-    if head not in (b'SCE\0', b'\x7fELF'):
-        sys.exit('mock-emulator: boot file is not SELF/ELF')
-    sfo = os.path.join(os.path.dirname(os.path.dirname(boot)), 'PARAM.SFO')
-    b = open(sfo, 'rb').read()
+    save = os.path.join(home, '.config/ppsspp/PSP/SAVEDATA', ident, 'SAVE.DAT')
+elif mode == 'psp':
+    if head != b'\0PBP':
+        sys.exit('mock-emulator: boot file is not a PBP')
+    raw = open(boot, 'rb').read()
+    off, nxt = struct.unpack_from('<II', raw, 8)
+    b = raw[off:nxt]
     kt, dt, n = struct.unpack_from('<III', b, 8)
     for i in range(n):
         ko, _fmt, ln, _mx, do = struct.unpack_from('<HHIII', b, 20 + i * 16)
         key = b[kt + ko:b.index(b'\0', kt + ko)].decode()
-        if key == 'TITLE_ID':
+        if key == 'DISC_ID':
             ident = b[dt + do:dt + do + ln].rstrip(b'\0').decode()
-    save = os.path.join(home, '.config/rpcs3/dev_hdd0/home/00000001/savedata', ident, 'SAVE.DAT')
+    save = os.path.join(home, '.config/ppsspp/PSP/SAVEDATA', ident, 'SAVE.DAT')
 else:
     iso_volume(boot)
     ident = os.path.splitext(os.path.basename(boot))[0][:20]
@@ -75,7 +76,7 @@ last = '-'
 
 
 def title():
-    win.set_wm_name(f'MOCK-{mode.upper().replace("PS", "P")} id={ident} x={st["x"]} y={st["y"]} score={st["score"]} loaded={loaded} pad={last}')
+    win.set_wm_name(f'MOCK-{"PSP" if mode == "psp" else "P2"} id={ident} x={st["x"]} y={st["y"]} score={st["score"]} loaded={loaded} pad={last}')
 
 
 def draw():

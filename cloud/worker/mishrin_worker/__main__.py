@@ -141,7 +141,7 @@ class Worker:
         gl = bool(glob.glob('/usr/lib/x86_64-linux-gnu/dri/*_dri.so') or glob.glob('/usr/lib/x86_64-linux-gnu/libGLX_*.so.0')) and bool(glob.glob('/usr/lib/*/libGL.so.1'))
         runs = lambda n: any(e['name'] == n and not e['mock'] and e['installed'] for e in emus)
         flags = {'cpu': True, 'gpu': vk['available'], 'hardwareGpu': vk['hardware'], 'vulkan': vk['available'], 'opengl': bool(gl),
-                 'pcsx2': runs('pcsx2'), 'rpcs3': runs('rpcs3'), 'wine': any(p.kind == 'windows' and p.available() for p in self.profiles),
+                 'pcsx2': runs('pcsx2'), 'ppsspp': runs('ppsspp'), 'wine': any(p.kind == 'windows' and p.available() for p in self.profiles),
                  'mockRuntimes': sorted({e['runtime'] for e in emus if e['mock']})}
         return {
             'flags': flags,

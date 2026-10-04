@@ -2,8 +2,10 @@
 // scheduler actually stored (headers, filesystems, signatures) — never from file names or client claims.
 import { chunkedReader } from './storage.mjs';
 import { peInfo } from './manifest.mjs';
+import { inflateRawSync } from 'node:zlib';
 
 export class InspectError extends Error { constructor(msg, status = 415) { super(msg); this.status = status; } }
+const PS3 = 'PS3 games are not supported by Mishrin.';
 
 const ascii = b => b.toString('latin1');
 
@@ -35,6 +37,7 @@ export function openIso(r) {
       return {
         system: ascii(pvd.subarray(8, 40)).trim(), volume: ascii(pvd.subarray(40, 72)).trim(), root,
         text(name) { const e = root.get(name); return e && !e.dir && e.size < 65536 ? read(e.lba, e.size).toString('utf8') : null; },
+        sub(dir, name) { const d = root.get(dir); const e = d?.dir ? list(d.lba, d.size).get(name) : null; return e && !e.dir && e.size < 65536 ? read(e.lba, e.size) : null; },
       };
     }
   }
@@ -69,39 +72,89 @@ const chdKind = r => {
   return null;
 };
 
-/** Classify an upload (validated file list whose chunks are all stored). */
-export function inspectUpload(files, store) {
+/** CSO (CISO v1) → random-access reader over the uncompressed image (only touched blocks are inflated). */
+export function cisoReader(r) {
+  const h = r.read(0, 24);
+  if (h.length < 24 || ascii(h.subarray(0, 4)) !== 'CISO') return null;
+  const total = Number(h.readBigUInt64LE(8)), block = h.readUInt32LE(16), align = h[21];
+  if (!block || block > 1 << 20) return null;
+  const cache = new Map();
+  const blockAt = i => {
+    if (cache.has(i)) return cache.get(i);
+    const ix = r.read(24 + i * 4, 8), a = ix.readUInt32LE(0), b = ix.readUInt32LE(4);
+    const start = (a & 0x7fffffff) * 2 ** align, end = (b & 0x7fffffff) * 2 ** align;
+    let d = r.read(start, end - start);
+    if (!(a & 0x80000000)) d = inflateRawSync(d);
+    if (cache.size > 64) cache.clear();
+    cache.set(i, d);
+    return d;
+  };
+  return {
+    size: total,
+    read(off, len) {
+      const parts = [];
+      for (len = Math.min(len, total - off); len > 0;) { const i = Math.floor(off / block), w = off % block, n = Math.min(len, block - w); parts.push(blockAt(i).subarray(w, w + n)); off += n; len -= n; }
+      return Buffer.concat(parts);
+    },
+  };
+}
+
+const isPsp = iso => iso.root.has('PSP_GAME') || iso.root.has('UMD_DATA.BIN') || iso.system.startsWith('PSP GAME');
+const pspTitle = iso => (parseSfo(iso.sub('PSP_GAME', 'PARAM.SFO') || Buffer.alloc(0)) || {}).TITLE || iso.volume;
+const pspSerial = iso => (iso.text('UMD_DATA.BIN') || '').split('|')[0];
+
+/** EBOOT.PBP → PARAM.SFO fields, or null when it is not a PBP. */
+export function pbpInfo(r) {
+  const h = r.read(0, 40);
+  if (h.length < 40 || h[0] !== 0 || ascii(h.subarray(1, 4)) !== 'PBP') return null;
+  const off = h.readUInt32LE(8), next = h.readUInt32LE(12);
+  const p = next > off && next - off < 65536 ? parseSfo(r.read(off, next - off)) : null;
+  return { category: p?.CATEGORY || '', title: p?.TITLE || '', serial: p?.DISC_ID || '' };
+}
+
+/** Classify an upload (validated file list whose chunks are all stored). opts.ps1: return PS1 instead of refusing it
+ *  (archives: the extracted game is handed back to the browser, where P1 runs it). */
+export function inspectUpload(files, store, opts = {}) {
   const byPath = new Map(files.map(f => [f.path.toLowerCase(), f]));
   const reader = f => chunkedReader(store, f);
   const ps1Local = () => new InspectError('This is a PS1-class disc. It runs locally in your browser with Mishrin P1 — no upload needed.', 422);
+  const ps1 = (boot, title = '') => { if (opts.ps1) return { platform: 'ps1', boot, title }; throw ps1Local(); };
 
-  // PS3-class disc folder: [prefix/]PS3_GAME/PARAM.SFO + PS3_GAME/USRDIR/EBOOT.BIN
-  const sfo = files.find(f => /(^|\/)PS3_GAME\/PARAM\.SFO$/i.test(f.path));
-  if (sfo) {
-    const prefix = sfo.path.slice(0, sfo.path.length - 'PS3_GAME/PARAM.SFO'.length);
-    const eboot = byPath.get(`${prefix}PS3_GAME/USRDIR/EBOOT.BIN`.toLowerCase());
-    if (!eboot) throw new InspectError('PS3_GAME/USRDIR/EBOOT.BIN is missing from this game folder.', 422);
-    const head = reader(eboot).read(0, 4);
-    if (!(head.equals(Buffer.from('SCE\0', 'latin1')) || head.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])))) throw new InspectError('EBOOT.BIN is not a SELF/ELF executable.', 422);
-    const p = parseSfo(reader(sfo).read(0, Math.min(sfo.size, 65536)));
-    if (!p) throw new InspectError('PARAM.SFO is damaged.', 422);
-    return { platform: 'ps3', boot: eboot.path, title: p.TITLE || '', serial: p.TITLE_ID || '', category: p.CATEGORY || '' };
+  if (files.some(f => /(^|\/)PS3_GAME\/PARAM\.SFO$/i.test(f.path))) throw new InspectError(PS3, 422);
+
+  // PSP game folder / single EBOOT.PBP (PSone classics in a PBP are PS1 → local)
+  const pbp = files.length === 1 ? files[0] : files.find(f => /(^|\/)EBOOT\.PBP$/i.test(f.path));
+  if (pbp) {
+    const c = pbpInfo(reader(pbp));
+    if (c) {
+      if (c.category === 'ME') { if (opts.ps1) return { platform: 'ps1', boot: pbp.path, title: c.title || '' }; throw ps1Local(); }
+      return { platform: 'psp', boot: pbp.path, title: c.title || '', serial: c.serial || '', format: 'pbp' };
+    }
   }
+  // CSO (compressed UMD image)
+  const cso = files.length === 1 && ascii(reader(files[0]).read(0, 4)) === 'CISO' ? files[0] : null;
+  if (cso) {
+    const iso = openIso(cisoReader(reader(cso)) || { read: () => Buffer.alloc(0) });
+    if (iso && isPsp(iso)) return { platform: 'psp', boot: cso.path, title: pspTitle(iso), serial: pspSerial(iso), format: 'cso' };
+    throw new InspectError('This CSO image is not a PSP game.', 422);
+  }
+
   if (files.length === 1) {
     const f = files[0], r = reader(f), head = r.read(0, 4096);
     const pe = peInfo(head);
     if (pe) return { platform: 'windows', arch: pe.arch, title: '' };
-    if (head.subarray(0, 4).equals(Buffer.from([0x7f, 0x50, 0x4b, 0x47]))) throw new InspectError('PS3 PKG files must be installed by the emulator first; PKG upload is not supported yet. Upload the game folder or disc image instead.');
+    if (head.subarray(0, 4).equals(Buffer.from([0x7f, 0x50, 0x4b, 0x47]))) throw new InspectError('PKG packages are not supported. Upload the game image (ISO/CSO) or game folder instead.');
     if (head.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) throw new InspectError('Linux executables have no cloud worker yet.');
     if (ascii(head.subarray(0, 8)) === 'MComprHD') {
       const k = chdKind(r);
       if (k === 'dvd') return { platform: 'ps2', boot: f.path, title: '' };
-      if (k === 'cd') throw ps1Local();
+      if (k === 'cd') return ps1(f.path);
       throw new InspectError('Unsupported CHD (v5 with CD/DVD metadata required).');
     }
   }
   // Disc images: an .iso, or a .cue whose first BIN carries the filesystem
-  const disc = files.find(f => /\.iso$/i.test(f.path)) || files.find(f => /\.cue$/i.test(f.path));
+  const disc = files.find(f => /\.iso$/i.test(f.path)) || files.find(f => /\.cue$/i.test(f.path))
+    || (files.length === 1 && /\.(bin|img)$/i.test(files[0].path) ? files[0] : null);
   if (disc) {
     let img = disc;
     if (/\.cue$/i.test(disc.path)) {
@@ -113,12 +166,19 @@ export function inspectUpload(files, store) {
     }
     const iso = openIso(reader(img));
     if (!iso) throw new InspectError('No ISO 9660 filesystem found in this disc image.');
-    if (iso.root.has('PS3_GAME') || iso.root.has('PS3_DISC.SFB')) return { platform: 'ps3', boot: disc.path, title: iso.volume };
+    if (iso.root.has('PS3_GAME') || iso.root.has('PS3_DISC.SFB')) throw new InspectError(PS3, 422);
+    if (isPsp(iso)) return { platform: 'psp', boot: disc.path, title: pspTitle(iso), serial: pspSerial(iso), format: 'iso' };
     const cnf = iso.text('SYSTEM.CNF') || '';
     const boot2 = cnf.match(/^\s*BOOT2\s*=\s*cdrom0?:\\?([^;\s]+)/im);
     if (boot2) return { platform: 'ps2', boot: disc.path, title: iso.volume, serial: boot2[1] };
-    if (/^\s*BOOT\s*=/im.test(cnf) || iso.system.startsWith('PLAYSTATION')) throw ps1Local();
+    if (/^\s*BOOT\s*=/im.test(cnf) || iso.system.startsWith('PLAYSTATION')) return ps1(disc.path, iso.volume);
     throw new InspectError('This disc does not look like a supported console game.');
   }
-  throw new InspectError('Unsupported upload. Supported for cloud play: Windows .exe, PS2-class ISO/CHD/CUE, PS3-class game folder or ISO.');
+  // Windows game folder (e.g. extracted from an archive): the shallowest, then largest, PE executable
+  const exes = files.filter(f => /\.exe$/i.test(f.path)).map(f => ({ f, pe: peInfo(reader(f).read(0, 4096)) })).filter(x => x.pe);
+  if (exes.length) {
+    exes.sort((a, b) => a.f.path.split('/').length - b.f.path.split('/').length || b.f.size - a.f.size);
+    return { platform: 'windows', arch: exes[0].pe.arch, executable: exes[0].f.path, title: '' };
+  }
+  throw new InspectError('Unsupported upload. Supported for cloud play: Windows .exe, PS2-class ISO/CHD/CUE, PSP ISO/CSO/EBOOT.PBP, or a ZIP/RAR/7z containing one of them.');
 }

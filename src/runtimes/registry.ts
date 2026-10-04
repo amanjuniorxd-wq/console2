@@ -14,8 +14,8 @@
 import type { Game, RuntimeKind } from '../games/types';
 import type { Caps } from '../mpc/probe';
 
-export type RuntimeId = 'browser' | 'mishrin-p1' | 'ps2' | 'ps3-cloud' | 'windows-cloud' | 'ps4';
-export type PlatformId = 'browser' | 'ps1' | 'ps2' | 'ps3' | 'ps4' | 'windows' | 'linux';
+export type RuntimeId = 'browser' | 'mishrin-p1' | 'ps2' | 'psp' | 'windows-cloud' | 'ps4';
+export type PlatformId = 'browser' | 'ps1' | 'ps2' | 'psp' | 'ps4' | 'windows' | 'linux';
 export type Maturity = 'ready' | 'in-development' | 'architecture-ready' | 'research';
 export type Where = 'local' | 'cloud';
 
@@ -44,9 +44,9 @@ export const RUNTIMES: RuntimeDescriptor[] = [
   { id: 'ps2', name: 'Mishrin P2', platform: 'ps2', platformLabel: 'PS2-class', where: ['local', 'cloud'], engine: 'Cloud: PCSX2 1.6 on a worker · Local: not built',
     maturity: 'in-development', serves: ['p2'], cloudRuntimes: ['ps2'], formats: ['ISO', 'CHD', 'CUE+BIN'], userFiles: 'Your own discs and your own PS2 BIOS (installed on the worker by its operator).',
     note: 'Real PCSX2 runs on cloud workers, verified end to end with original Mishrin test software (video, audio, full controller, memory-card saves). Games need a PS2 BIOS from your own console, installed on the worker by its operator.', tests: 'tests/real/e2e_real_ps2.py (REAL_EMULATOR_TEST) · tests/cloud/e2e_windows.py (mock)' },
-  { id: 'ps3-cloud', name: 'Mishrin P3 Cloud', platform: 'ps3', platformLabel: 'PS3-class', where: ['cloud'], engine: 'RPCS3 0.0.43 on a worker (LLVM PPU · Vulkan RSX)',
-    maturity: 'in-development', serves: ['p3'], cloudRuntimes: ['ps3'], formats: ['Game folder (PS3_GAME)', 'ISO (decrypted)'], userFiles: 'Your own games and your own PS3 system software (installed on the worker by its operator).',
-    note: 'Real RPCS3 runs on cloud workers, verified end to end with an original Mishrin test program (video, audio, full controller, saves). Games need PS3 system software from your own console, installed on the worker by its operator.', tests: 'tests/real/e2e_real_ps3.py (REAL_EMULATOR_TEST) · tests/cloud/e2e_windows.py (mock)' },
+  { id: 'psp', name: 'Mishrin PSP', platform: 'psp', platformLabel: 'PSP', where: ['cloud'], engine: 'PPSSPP 1.20.4 on a worker',
+    maturity: 'ready', serves: ['psp'], cloudRuntimes: ['psp'], formats: ['ISO (UMD)', 'CSO', 'EBOOT.PBP', 'Game folder (EBOOT.PBP)'], userFiles: 'Your own PSP games (no firmware needed).',
+    note: 'Real PPSSPP on cloud workers (verified end to end with the original Mishrin PSP test program: video, audio, controller, saves). Shown Ready only while a worker that passed its self-test is online.', tests: 'tests/real/e2e_real_psp.py (REAL_EMULATOR_TEST)' },
   { id: 'windows-cloud', name: 'Windows', platform: 'windows', platformLabel: 'Windows', where: ['cloud'], engine: 'Wine 9 (WoW64) + DXVK / VKD3D-Proton on a GPU worker',
     maturity: 'ready', serves: ['x64-win', 'x86'], cloudRuntimes: ['x64-win', 'x86'], formats: ['.exe (single file)', 'registered titles'],
     note: 'Ready on the tested targets (Win32 GDI, D3D9, D3D11; 32/64-bit). Availability depends on deployed workers.', tests: 'tests/cloud/e2e_windows.py' },

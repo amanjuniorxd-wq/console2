@@ -330,7 +330,7 @@ class Sandbox:
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_NOFILE, (8192, 8192))
             # largest single file: the storage budget, or more for emulators that map sparse guest-memory files
-            # (RPCS3 reserves its PS3 address space through a multi-GiB memfd; disk usage is still capped by storage)
+            # (emulators that reserve guest address space through a multi-GiB memfd; disk usage is still capped by storage)
             resource.setrlimit(resource.RLIMIT_FSIZE, (max(self.limits['storageMB'], self.limits.get('fileMB', 0)) << 20,) * 2)
 
         log = open(os.path.join(self.dir, log_name), 'ab')

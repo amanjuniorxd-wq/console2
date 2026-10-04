@@ -151,6 +151,12 @@ export function player(_el: HTMLElement, id: string) {
       fps.append(chips([[30, '30'], [60, '60'], [120, '120'], [0, '∞']], settings.maxFps as number, v => s.setMaxFps?.(v)));
       panel.append(fps);
     } else if (p === 'res') {
+      if (isEmu) {
+        const d = h('div', 'setrow');
+        d.innerHTML = '<span class="lbl">Display<span class="hint">Original keeps the game\'s shape (black bars). Stretch fills your whole screen; the picture is scaled by the GPU, not re-rendered.</span></span>';
+        d.append(chips([['aspect', 'Original Aspect Ratio'], ['stretch', 'Stretch to Device Resolution']], settings.emuDisplay, v => { setSetting('emuDisplay', v); applyDisplay(); }));
+        panel.append(d);
+      }
       const r = h('div', 'setrow');
       if (s.setScaling) {
         r.innerHTML = '<span class="lbl">Scaling<span class="hint">Internal resolution is the console\'s native resolution (software renderer); this sets how it is scaled to your screen.</span></span>';
@@ -207,11 +213,18 @@ export function player(_el: HTMLElement, id: string) {
     timers.unshift(t);
   }
 
+  /** Emulator games: Original Aspect Ratio (object-fit contain) or Stretch to Device Resolution (object-fit fill).
+   *  Both are GPU compositor scaling of the game's own framebuffer/stream: CSS pixels × devicePixelRatio, resize,
+   *  fullscreen and orientation changes are handled by layout — nothing is re-rendered at a higher resolution. */
+  const isEmu = !!g.emu || ['p1', 'p2', 'psp'].includes(g.runtime);
   function applyDisplay() {
+    const stretch = isEmu && settings.emuDisplay === 'stretch';
+    surface.querySelectorAll<HTMLElement>('.game-surface').forEach(el => el.classList.toggle('stretch', stretch));
+    surface.dataset.display = isEmu ? settings.emuDisplay : 'native';
     const c = surface.querySelector('canvas');
     if (!c || !session) return;
     c.classList.toggle('pixelated', g.launchConfig?.pixelated !== false);
-    if (pixelPerfect) {
+    if (pixelPerfect && !stretch) {
       const st = session.stats(); const k = Math.max(1, Math.floor(Math.min(innerWidth / st.width, innerHeight / st.height)));
       c.style.width = `${st.width * k}px`; c.style.height = `${st.height * k}px`;
     } else { c.style.width = ''; c.style.height = ''; }
@@ -241,7 +254,7 @@ export function player(_el: HTMLElement, id: string) {
   const pictureRect = (el: HTMLCanvasElement | HTMLVideoElement) => {
     const r = el.getBoundingClientRect();
     const w = el instanceof HTMLVideoElement ? el.videoWidth : el.width, h = el instanceof HTMLVideoElement ? el.videoHeight : el.height;
-    if (!w || !h) return r;
+    if (!w || !h || el.classList.contains('stretch')) return r;
     const k = Math.min(r.width / w, r.height / h), pw = w * k, ph = h * k;
     return { left: r.left + (r.width - pw) / 2, top: r.top + (r.height - ph) / 2, width: pw, height: ph };
   };

@@ -18,7 +18,7 @@
    true
   ],
   [
-   "worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/rpcs3)",
+   "worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/ppsspp)",
    true
   ],
   [
@@ -103,22 +103,22 @@
   ]
  ],
  "timings": {
-  "workerStartToRegisteredMs": 19652,
-  "selfTestEmulatorStartMs": 1324,
-  "selfTestFirstFrameMs": 1337,
-  "uploadMs": 200,
-  "allocationAndLaunchMs": 6469,
-  "firstFrameBrowserMs": 6920,
-  "gameLoadedBrowserMs": 6958,
+  "workerStartToRegisteredMs": 20170,
+  "selfTestEmulatorStartMs": 1364,
+  "selfTestFirstFrameMs": 1387,
+  "uploadMs": 249,
+  "allocationAndLaunchMs": 6284,
+  "firstFrameBrowserMs": 7769,
+  "gameLoadedBrowserMs": 7818,
   "worker": {
-   "layerMs": 42,
-   "sandboxMs": 322,
-   "emulatorWindowMs": 755,
-   "streamSetupMs": 2659,
-   "totalMs": 3800
+   "layerMs": 36,
+   "sandboxMs": 324,
+   "emulatorWindowMs": 753,
+   "streamSetupMs": 2440,
+   "totalMs": 3576
   },
-  "shutdownMs": 2207,
-  "restartToRestoredMs": 7222
+  "shutdownMs": 2264,
+  "restartToRestoredMs": 6608
  },
  "metrics": {
   "gsArea": {
@@ -130,150 +130,150 @@
   "buttonTrace": [
    [
     "up",
-    225,
+    372,
     [
      319,
-     176
+     172
     ]
    ],
    [
     "down",
-    205,
+    295,
     [
-     318,
-     247
+     319,
+     200
     ]
    ],
    [
     "left",
-    209,
+    238,
     [
-     288,
-     252
+     263,
+     235
     ]
    ],
    [
     "right",
-    203,
+    205,
     [
-     343,
-     252
+     303,
+     236
     ]
    ],
    [
     "cross",
-    244,
+    316,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "circle",
-    123,
+    332,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "square",
-    101,
+    298,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "triangle",
-    144,
+    384,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "l1",
-    179,
+    206,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "r1",
-    173,
+    200,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "l2",
-    261,
+    240,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "r2",
-    233,
+    217,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "select",
-    282,
+    332,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "l3",
-    208,
+    136,
     [
-     343,
-     252
+     303,
+     235
     ]
    ],
    [
     "r3",
-    251,
+    177,
     [
-     343,
-     252
+     303,
+     235
     ]
    ]
   ],
   "inputRoundTripMs": {
-   "median": 208,
-   "min": 101,
-   "max": 282,
+   "median": 240,
+   "min": 136,
+   "max": 384,
    "n": 15
   },
   "video": {
    "resolution": "640x480",
-   "browserFps": 39,
-   "workerFps": 11,
+   "browserFps": 60,
+   "workerFps": 47,
    "codec": "VP8",
    "encoder": "vp8enc",
    "hardwareEncoder": false,
-   "encodeMs": 60,
-   "networkRttMs": 0,
-   "jitterBufferMs": 22.3,
-   "framesDecoded": 719,
+   "encodeMs": 18,
+   "networkRttMs": 18.0,
+   "jitterBufferMs": 40.8,
+   "framesDecoded": 906,
    "framesDropped": 0,
    "packetsLost": 0,
-   "pcsx2Window": "Slot: 0 | Speed:  92% (55.14) | Unknown | Limiter: Normal | GSdx OGL HW | 640x448 | Automatic | Interlaced | EE:  23% | "
+   "pcsx2Window": "Slot: 0 | Speed: 102% (61.22) | Unknown | Limiter: Normal | GSdx OGL HW | 640x448 | Automatic | Interlaced | EE:  28% | "
   },
   "audio": {
    "codec": "audio/opus",
-   "packets": 2172,
-   "decodedRms": 0.0242,
+   "packets": 1181,
+   "decodedRms": 0.0244,
    "peakHz": 856
   }
  }

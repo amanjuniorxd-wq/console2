@@ -31,7 +31,24 @@ ok('DVD layout with BOOT2 → Mishrin P2 (detected, not runnable)', d.ok && d.pl
 d = await detect([file(T + 'fixtures/p2-layout.chd')]);
 ok('CHD with DVD metadata → P2', d.ok && d.platform === 'p2');
 d = await detect([file(T + 'fixtures/p3-layout.iso')]);
-ok('PS3_GAME layout → Mishrin P3 (research)', d.ok && d.platform === 'p3' && CORES.p3.status === 'research' && !CORES.p3.available);
+ok('PS3_GAME layout → refused: "PS3 games are not supported" (PS3 removed, never routed)', !d.ok && /PS3 games are not supported/.test(d.error || '') && !('p3' in CORES));
+const PSP = 'emulators/psp/testapp/fixtures/';
+d = await detect([file(PSP + 'mishrin-psp-test.iso')]);
+ok('PSP UMD ISO (PSP_GAME, UMD_DATA.BIN) → PSP, title from PARAM.SFO, serial (DISC_ID)', d.ok && d.platform === 'psp' && d.title === 'Mishrin PSP Test' && d.serial === 'MSHR00001', JSON.stringify({ p: d.platform, t: d.title, s: d.serial, e: d.error }));
+d = await detect([file(PSP + 'mishrin-psp-test.cso')]);
+ok('PSP CSO (CISO v1) → PSP: only the needed blocks are inflated', d.ok && d.platform === 'psp' && d.format === 'cso' && d.title === 'Mishrin PSP Test', d.error);
+d = await detect([file(PSP + 'MSHRPSP/EBOOT.PBP')]);
+ok('PSP EBOOT.PBP (CATEGORY MG) → PSP', d.ok && d.platform === 'psp' && d.format === 'pbp' && d.title === 'Mishrin PSP Test');
+{
+  const sfo = (cat: string) => { const k = 'CATEGORY\0TITLE\0\0\0'; const v = cat + '\0\0', t = 'Classic\0'; const b = new Uint8Array(20 + 32 + k.length + 4 + 8);
+    const dv = new DataView(b.buffer); b.set([0, 0x50, 0x53, 0x46]); dv.setUint32(4, 0x101, true); dv.setUint32(8, 52, true); dv.setUint32(12, 52 + k.length, true); dv.setUint32(16, 2, true);
+    dv.setUint16(20, 0, true); dv.setUint16(22, 0x204, true); dv.setUint32(24, 3, true); dv.setUint32(28, 4, true); dv.setUint32(32, 0, true);
+    dv.setUint16(36, 9, true); dv.setUint16(38, 0x204, true); dv.setUint32(40, 8, true); dv.setUint32(44, 8, true); dv.setUint32(48, 4, true);
+    b.set([...k].map(c => c.charCodeAt(0)), 52); b.set([...v].map(c => c.charCodeAt(0)), 52 + k.length); b.set([...t].map(c => c.charCodeAt(0)), 56 + k.length); return b; };
+  const s = sfo('ME'), h = new Uint8Array(40), dv = new DataView(h.buffer); h.set([0, 0x50, 0x42, 0x50]); dv.setUint32(8, 40, true); for (let i = 1; i < 8; i++) dv.setUint32(8 + i * 4, 40 + s.length, true);
+  d = await detect([new File([h, s], 'EBOOT.PBP')]);
+  ok('PSone classic PBP (CATEGORY ME) → P1 (local), not PSP', d.ok && d.platform === 'p1' && d.title === 'Classic', JSON.stringify({ p: d.platform, t: d.title, e: d.error }));
+}
 d = await detect([new File([new Uint8Array([0x7f, 0x43, 0x4e, 0x54, 0, 0, 0, 0])], 'game.pkg')]);
 ok('PKG with CNT magic → Mishrin P4 (research)', d.ok && d.platform === 'p4' && CORES.p4.status === 'research');
 

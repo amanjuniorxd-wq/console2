@@ -8,7 +8,7 @@ export type RuntimeKind =
   | 'linux' // Linux x64 — cloud node
   | 'p1' // Mishrin P1 — PlayStation-1-class console image, emulated locally (src/emu)
   | 'p2' // Mishrin P2 — PlayStation-2-class (not available: see docs/EMULATION.md)
-  | 'p3' // Mishrin P3 — research only
+  | 'psp' // Mishrin PSP — PSP games, PPSSPP on a cloud worker
   | 'p4'; // Mishrin P4 — research only
 
 export type Genre = 'fantasy' | 'racing' | 'scifi' | 'action' | 'landscape';
@@ -47,11 +47,11 @@ export interface Game {
 }
 
 export const CLOUD_ONLY: ReadonlySet<RuntimeKind> = new Set(['x86', 'x64-win', 'linux']);
-export const KNOWN_RUNTIMES: ReadonlySet<string> = new Set(['wasm', 'web', 'webgpu', 'x86', 'x64-win', 'linux', 'p1', 'p2', 'p3', 'p4']);
-export const EMU_RUNTIMES: ReadonlySet<RuntimeKind> = new Set(['p1', 'p2', 'p3', 'p4']);
+export const KNOWN_RUNTIMES: ReadonlySet<string> = new Set(['wasm', 'web', 'webgpu', 'x86', 'x64-win', 'linux', 'p1', 'p2', 'psp', 'p4']);
+export const EMU_RUNTIMES: ReadonlySet<RuntimeKind> = new Set(['p1', 'p2', 'psp', 'p4']);
 
 export interface EmuInfo {
-  platform: 'p1' | 'p2' | 'p3' | 'p4';
+  platform: 'p1' | 'p2' | 'psp' | 'p4';
   format: string;           // cue+bin, chd, iso, bin, img, exe, pbp, m3u
   primary: string;          // file the core opens (e.g. the .cue)
   files: { name: string; size: number }[];

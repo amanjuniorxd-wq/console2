@@ -22,7 +22,7 @@ class Session:
         self.manifest = validate(msg['manifest'], allow_network=False)  # defence in depth: re-validate on the worker
         if manifest_hash(self.manifest) != msg.get('manifestHash', manifest_hash(self.manifest)):
             raise ValueError('manifest hash mismatch')
-        self.profile = profile_for(worker.profiles, self.manifest)  # Windows/Wine or an emulator (RPCS3, PCSX2, …)
+        self.profile = profile_for(worker.profiles, self.manifest)  # Windows/Wine or an emulator (PCSX2, PPSSPP, …)
         self.req = self.manifest['requirements']
         disp = self.manifest['display']
         self.screen = (int(disp.get('width', 1280)) // 2 * 2, int(disp.get('height', 720)) // 2 * 2)

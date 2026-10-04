@@ -1,0 +1,244 @@
+{
+ "suite": "REAL_EMULATOR_TEST psp",
+ "emulator": "PPSSPP 1.20.4 (source build)",
+ "image": "Mishrin PSP test program (original)",
+ "passed": 23,
+ "total": 23,
+ "results": [
+  [
+   "worker self-test: real PPSSPP booted the PSP test program (changing frames) before the worker registered",
+   true
+  ],
+  [
+   "no firmware needed: READY comes from the worker's own passed self-test (not hardcoded), PSP advertised",
+   true
+  ],
+  [
+   "worker without PPSSPP: PSP not offered to the scheduler",
+   true
+  ],
+  [
+   "worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/ppsspp)",
+   true
+  ],
+  [
+   "console runtime status: PSP \"Ready\" derived from the live worker report",
+   true
+  ],
+  [
+   "detector: UMD image identified as PSP from PSP_GAME/PARAM.SFO (content, not extension)",
+   true
+  ],
+  [
+   "PPSSPP session on the PPSSPP worker, scheduled automatically (no emulator chosen by the browser)",
+   true
+  ],
+  [
+   "test image loaded: program read GAME.DAT from disc0: through the emulated UMD (square green, box in the disc colour)",
+   true
+  ],
+  [
+   "browser receives rendered frames of the running game",
+   true
+  ],
+  [
+   "D-pad, face buttons, L/R, Select reach the game (indicator lit in the streamed frame)",
+   true
+  ],
+  [
+   "game responds: held D-pad moves the box, CROSS raises the score bar",
+   true
+  ],
+  [
+   "analog stick reaches the game (right \u2192 marker right, up \u2192 marker up)",
+   true
+  ],
+  [
+   "input latency measured (gamepad press \u2192 reacting frame decoded in the browser)",
+   true
+  ],
+  [
+   "video stream metrics (resolution, fps, encoder, encode latency, RTT, dropped frames)",
+   true
+  ],
+  [
+   "audio: the program's 750 Hz tone (sceAudio \u2192 PPSSPP \u2192 session PulseAudio \u2192 Opus \u2192 WebRTC) decoded in the browser",
+   true
+  ],
+  [
+   "START saves to the memory stick (ms0:/PSP/SAVEDATA, program reports DONE)",
+   true
+  ],
+  [
+   "clean termination: PPSSPP closed, sandbox/mounts removed",
+   true
+  ],
+  [
+   "final save captured the save data into the cloud save layer",
+   true
+  ],
+  [
+   "restart restores the save: save data loaded, box position equals the saved one",
+   true
+  ],
+  [
+   "second session ends cleanly",
+   true
+  ],
+  [
+   "PSP worker gone \u2192 \"Not deployed\"/\"No workers\" (never a stale Ready)",
+   true
+  ],
+  [
+   "upload/play refused while no PSP worker is deployed (no fake session)",
+   true
+  ],
+  [
+   "no uncaught console errors",
+   true
+  ]
+ ],
+ "timings": {
+  "workerStartToRegisteredMs": 81173,
+  "selfTestEmulatorStartMs": 1560,
+  "selfTestFirstFrameMs": 1570,
+  "uploadMs": 135,
+  "allocationAndLaunchMs": 6003,
+  "firstFrameBrowserMs": 6457,
+  "gameLoadedBrowserMs": 6487,
+  "worker": {
+   "layerMs": 8,
+   "sandboxMs": 326,
+   "emulatorWindowMs": 251,
+   "streamSetupMs": 2737,
+   "totalMs": 3337
+  },
+  "shutdownMs": 1112,
+  "restartToRestoredMs": 5421
+ },
+ "metrics": {
+  "gsArea": {
+   "x0": 0,
+   "y0": 0,
+   "sx": 1,
+   "sy": 1
+  },
+  "buttonTrace": [
+   [
+    "up",
+    124,
+    [
+     239,
+     121
+    ]
+   ],
+   [
+    "down",
+    126,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "left",
+    105,
+    [
+     225,
+     135
+    ]
+   ],
+   [
+    "right",
+    114,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "cross",
+    121,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "circle",
+    106,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "square",
+    108,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "triangle",
+    121,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "l1",
+    125,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "r1",
+    126,
+    [
+     239,
+     135
+    ]
+   ],
+   [
+    "select",
+    143,
+    [
+     239,
+     135
+    ]
+   ]
+  ],
+  "inputRoundTripMs": {
+   "median": 121,
+   "min": 105,
+   "max": 143,
+   "n": 11
+  },
+  "video": {
+   "resolution": "480x272",
+   "browserFps": 60,
+   "workerFps": 59,
+   "codec": "VP8",
+   "encoder": "vp8enc",
+   "hardwareEncoder": false,
+   "encodeMs": 3.7,
+   "networkRttMs": 1.0,
+   "jitterBufferMs": 4.4,
+   "framesDecoded": 1244,
+   "framesDropped": 0,
+   "packetsLost": 0,
+   "ppssppWindow": "MSHR00001 : Mishrin PSP Test"
+  },
+  "audio": {
+   "codec": "audio/opus",
+   "packets": 2088,
+   "decodedRms": 0.2342,
+   "peakHz": 694
+  }
+ }
+}

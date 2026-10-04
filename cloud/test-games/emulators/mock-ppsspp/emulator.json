@@ -1,0 +1,8 @@
+{
+ "name": "ppsspp", "runtime": "psp", "version": "mock-1", "mock": true,
+ "binary": "mock-emulator",
+ "argv": ["{binary}", "--mode=psp", "{boot}"],
+ "home": "home",
+ "saves": [".config/ppsspp/PSP/SAVEDATA"],
+ "exclude": ["*.keep"]
+}

@@ -38,7 +38,7 @@ export function plan(game: Game, caps: Caps, s: Settings): Plan {
   if (!KNOWN_RUNTIMES.has(game.runtime)) return { routes: [], blocked: { code: 'unsupported', message: `This title's runtime "${game.runtime}" is not supported.` } };
   if (!game.url && !game.chunks?.length) return { routes: [], blocked: { code: 'no-file', message: 'Game file not added yet.' } };
   // Resolver order (docs/universal-runtime-architecture.md): can the browser run it → local emulator → cloud.
-  // Console emulation: P1 runs on this device (files never uploaded). P2/P3 run only on a cloud worker, and only
+  // Console emulation: P1 runs on this device (files never uploaded). P2/PSP run only on a cloud worker, and only
   // for titles the player explicitly uploaded to their own cloud (url "upload:<id>").
   if (EMU_RUNTIMES.has(game.runtime)) {
     const d = descriptorFor(game)!;

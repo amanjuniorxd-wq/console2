@@ -1,7 +1,7 @@
 """Session profiles: what runs inside a session sandbox.
 
     WindowsProfile   Wine (WoW64) + DXVK/VKD3D-Proton runtime layer, game at C:\\Game        runtimes: x64-win, x86
-    EmulatorProfile  a native emulator (RPCS3, PCSX2, …) described by an emulator.json       runtimes: ps3, ps2, …
+    EmulatorProfile  a native emulator (PCSX2, PPSSPP, …) described by an emulator.json      runtimes: ps2, psp, …
 
 Both reuse the same isolation, storage, display/audio, stream, input and save machinery. A profile only decides
 (1) the read-only runtime layer under the session's writable overlay, (2) where the game layer is mounted,
@@ -9,12 +9,12 @@ Both reuse the same isolation, storage, display/audio, stream, input and save ma
 
 emulator.json (one per directory under --emulators, default /opt/mishrin/emulators):
     {
-      "name": "rpcs3", "runtime": "ps3", "version": "0.0.36",
-      "binary": "rpcs3/usr/bin/rpcs3",                 relative to the emulator directory (bound read-only at /opt/emu)
+      "name": "pcsx2", "runtime": "ps2", "version": "1.6.0",
+      "binary": "pcsx2/usr/bin/PCSX2",                 relative to the emulator directory (bound read-only at /opt/emu)
       "argv": ["{binary}", "--no-gui", "{boot}"],     placeholders only; the boot path comes from the validated manifest
       "home": "home",                                  template home (config, pad bindings, user-installed firmware)
-      "firmware": {"label": "PS3 system software", "required": [".config/rpcs3/dev_flash/vsh/module/vsh.self"]},
-      "saves": [".config/rpcs3/dev_hdd0/home"],        save-data scope inside home (what the cloud save layer captures)
+      "firmware": {"label": "PS2 BIOS", "kind": "ps2-bios", "dir": ".config/PCSX2/bios"},
+      "saves": [".config/PCSX2/memcards"],        save-data scope inside home (what the cloud save layer captures)
       "exclude": ["*/cache/*"], "env": {"QT_QPA_PLATFORM": "xcb"}, "mock": false
     }
 Firmware/BIOS files are never shipped by Mishrin: the operator installs the user's own copy into the template home.
@@ -33,9 +33,9 @@ from .manifest import win_path
 from . import savelayer
 
 NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,31}$')
-RUNTIME_RE = re.compile(r'^(ps2|ps3)$')          # must match server/lib/manifest.mjs EMULATOR_PLATFORMS
+RUNTIME_RE = re.compile(r'^(ps2|psp)$')          # must match server/lib/manifest.mjs EMULATOR_PLATFORMS
 PLACEHOLDER_RE = re.compile(r'^(\{binary\}|\{boot\}|[A-Za-z0-9_\-=.,:/+]{1,64})$')
-PLATFORM_EMULATOR = {'ps2': 'pcsx2', 'ps3': 'rpcs3'}
+PLATFORM_EMULATOR = {'ps2': 'pcsx2', 'psp': 'ppsspp'}
 
 
 class WindowsProfile:
@@ -268,7 +268,7 @@ class EmulatorProfile:
     def launch_spec(self, s):
         fm = [f.lower() for f in self.spec.get('formats', [])]
         ext = s.manifest['boot'].rsplit('.', 1)[-1].lower() if '.' in s.manifest['boot'] else ''
-        if fm and s.manifest['boot'] and ext not in fm and not s.manifest['boot'].endswith('EBOOT.BIN'):
+        if fm and s.manifest['boot'] and ext not in fm:
             raise RuntimeError(f'{self.name} {self.spec.get("version", "")} on this worker accepts {", ".join("." + f for f in fm)}, not .{ext}')
         boot = '/home/player/prefix/game/' + s.manifest['boot']
         bin_in = self.binary if self.system_binary else '/opt/emu/' + os.path.relpath(self.binary, self.dir)

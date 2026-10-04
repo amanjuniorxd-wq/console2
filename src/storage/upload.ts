@@ -12,7 +12,7 @@ import { base, idHeaders } from '../cloud/identity';
 
 export const CHUNK = 4 * 1024 * 1024;
 export interface UploadFile { path: string; blob: Blob }
-export interface UploadResult { id: string; platform: string; runtime: string; title: string; serial?: string }
+export interface UploadResult { id: string; platform: string; runtime: string; title: string; serial?: string; boot?: string; format?: string; files?: { path: string; size: number }[] }
 export interface Progress { phase: 'hashing' | 'uploading' | 'checking'; done: number; total: number; dedupBytes?: number }
 
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -47,7 +47,7 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
     opts.signal?.throwIfAborted();
   }
   const d = await call('/api/uploads', { method: 'POST', body: JSON.stringify({ files: decl, title: opts.title }), signal: opts.signal });
-  if (d.state === 'complete') return { id: d.id, platform: d.platform, runtime: d.runtime, title: d.title };
+  if (d.state === 'complete') return { id: d.id, platform: d.platform, runtime: d.runtime, title: d.title, boot: d.boot, format: d.format, files: d.files };
   // Map each missing hash to one place it can be read from.
   const where = new Map<string, { blob: Blob; off: number }>();
   decl.forEach((f, i) => f.chunks.forEach((h, k) => { if (!where.has(h)) where.set(h, { blob: files[i].blob, off: k * CHUNK }); }));
@@ -73,5 +73,21 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
   await Promise.all([worker(), worker(), worker()]);
   opts.onProgress?.({ phase: 'checking', done: 1, total: 1 });
   const c = await call(`/api/uploads/${d.id}/complete`, { method: 'POST', body: '{}', signal: opts.signal });
-  return { id: c.id, platform: c.platform, runtime: c.runtime, title: c.title, serial: c.serial };
+  return { id: c.id, platform: c.platform, runtime: c.runtime, title: c.title, serial: c.serial, boot: c.boot, format: c.format, files: c.files };
+}
+
+/** Files the cloud extracted from an archive (owner-only), as local File objects — used when the game runs locally (PS1). */
+export async function fetchExtracted(r: UploadResult, onProgress?: (done: number, total: number) => void): Promise<File[]> {
+  const list = r.files || [];
+  const total = list.reduce((a, f) => a + f.size, 0);
+  let done = 0;
+  const out: File[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const res = await fetch(`${base()}/api/uploads/${r.id}/files/${i}`, { headers: idHeaders() });
+    if (!res.ok) throw new Error(`Download of ${list[i].path} failed (${res.status}).`);
+    const blob = await res.blob();
+    done += blob.size; onProgress?.(done, total);
+    out.push(new File([blob], list[i].path.split('/').pop()!));
+  }
+  return out;
 }

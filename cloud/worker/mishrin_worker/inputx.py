@@ -52,7 +52,7 @@ class Injector:
         self.mask = 0
         self.events = 0
         self._focus_checked = 0.0
-        self.focus_re = re.compile(focus_title) if focus_title else None   # emulators with several windows (RPCS3)
+        self.focus_re = re.compile(focus_title) if focus_title else None   # emulators with several windows
         if not autorepeat:   # a held pad button is one press: X autorepeat's synthetic release/press pairs confuse pad plugins
             self.d.change_keyboard_control(auto_repeat_mode=X.AutoRepeatModeOff)
             self.d.flush()

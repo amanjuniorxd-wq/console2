@@ -2,16 +2,17 @@
  * Universal game detection: one entry point for everything the player selects (a file, a set of disc files, or a
  * game folder). Decisions come from bytes — magic numbers, executable headers, filesystems, PARAM.SFO — never from
  * file names alone. Console images reuse the emulator detector (src/emu/detect.ts); this layer adds browser games,
- * Windows/Linux executables and PS3-class game folders, and maps every result onto the runtime registry.
+ * Windows/Linux executables, PSP game folders and archives (ZIP/RAR/7z), and maps every result onto the registry.
  */
-import { detect as detectDisc, type Detection } from '../emu/detect';
+import { detect as detectDisc, classifyPbp, CONSOLE_EXT, type Detection } from '../emu/detect';
+import { listArchive, likelyPlatform, type ArchiveListing } from './archive';
 import type { RuntimeId, PlatformId } from './registry';
 
 export interface UniversalDetection {
   ok: boolean;
   platform?: PlatformId;
   runtime?: RuntimeId;
-  kind?: 'browser-wasm' | 'browser-html' | 'windows-exe' | 'linux-elf' | 'console-image' | 'ps3-folder';
+  kind?: 'browser-wasm' | 'browser-html' | 'windows-exe' | 'linux-elf' | 'console-image' | 'psp-folder' | 'archive';
   format?: string;
   title?: string;
   serial?: string;
@@ -23,9 +24,10 @@ export interface UniversalDetection {
   warnings: string[];
   error?: string;
   disc?: Detection;
+  archive?: ArchiveListing;
 }
 
-const EMU_RUNTIME: Record<string, [PlatformId, RuntimeId]> = { p1: ['ps1', 'mishrin-p1'], p2: ['ps2', 'ps2'], p3: ['ps3', 'ps3-cloud'], p4: ['ps4', 'ps4'] };
+const EMU_RUNTIME: Record<string, [PlatformId, RuntimeId]> = { p1: ['ps1', 'mishrin-p1'], p2: ['ps2', 'ps2'], psp: ['psp', 'psp'], p4: ['ps4', 'ps4'] };
 const head = async (f: Blob, n: number) => new Uint8Array(await f.slice(0, n).arrayBuffer());
 const relPath = (f: File) => ((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name).replace(/\\/g, '/');
 const SAFE = /^[^:*?"<>|\x00-\x1f]{1,255}$/;
@@ -63,18 +65,36 @@ export async function detectAny(input: File[]): Promise<UniversalDetection> {
   if (!files.length) return fail('No file selected.');
   if (paths.some(p => !SAFE.test(p) || p.split('/').some(s => s === '..' || s === '.'))) return fail('Unsafe file name in the selection.');
 
-  // PS3-class game folder: PS3_GAME/PARAM.SFO + PS3_GAME/USRDIR/EBOOT.BIN
-  const sfoAt = paths.findIndex(p => /(^|\/)PS3_GAME\/PARAM\.SFO$/i.test(p));
-  if (sfoAt >= 0) {
-    const prefix = paths[sfoAt].slice(0, -'PS3_GAME/PARAM.SFO'.length);
-    const ebootAt = paths.findIndex(p => p.toLowerCase() === `${prefix}PS3_GAME/USRDIR/EBOOT.BIN`.toLowerCase());
-    if (ebootAt < 0) return fail('This game folder has no PS3_GAME/USRDIR/EBOOT.BIN.');
-    const eh = await head(files[ebootAt], 4);
-    const selfOrElf = (eh[0] === 0x53 && eh[1] === 0x43 && eh[2] === 0x45 && eh[3] === 0) || (eh[0] === 0x7f && eh[1] === 0x45 && eh[2] === 0x4c && eh[3] === 0x46);
-    if (!selfOrElf) return fail('EBOOT.BIN is not a SELF/ELF executable.');
-    const sfo = parseSfo(await head(files[sfoAt], 65536));
-    if (!sfo) return fail('PARAM.SFO is damaged.');
-    return { ...res, ok: true, platform: 'ps3', runtime: 'ps3-cloud', kind: 'ps3-folder', format: 'folder', title: String(sfo.TITLE || prefix.replace(/\/$/, '') || 'PS3 game'), serial: String(sfo.TITLE_ID || '') };
+  if (paths.some(p => /(^|\/)PS3_GAME\/PARAM\.SFO$/i.test(p))) return fail('PS3 games are not supported by Mishrin.');
+
+  if (files.length === 1) {
+    const listing = await listArchive(files[0]);
+    if (listing) {
+      if (listing.encrypted) return fail('This archive is password-protected. Upload an unencrypted archive.');
+      return { ...res, ok: true, kind: 'archive', format: listing.kind, title: files[0].name.replace(/\.[^.]+$/, ''), archive: listing,
+        warnings: [`Likely contents: ${likelyPlatform(listing.entries)}${listing.entries.length ? ` · ${listing.entries.length} files` : ''}. The cloud extracts it and decides the platform from its contents.`] };
+    }
+  }
+
+  // PSP game folder (homebrew / PSN layout): <folder>/EBOOT.PBP
+  if (files.length > 1) {
+    const at = paths.findIndex(p => /(^|\/)EBOOT\.PBP$/i.test(p));
+    if (at >= 0) {
+      const c = await classifyPbp(files[at]);
+      if (c.platform === 'psp') return { ...res, ok: true, platform: 'psp', runtime: 'psp', kind: 'psp-folder', format: 'folder', title: c.title || paths[at].split('/').slice(-2, -1)[0] || 'PSP game', serial: c.serial };
+    }
+    // A folder: only the files that can form a console game are examined (no per-folder file limit).
+    const pick = files.map((f, i) => [f, i] as const).filter(([f]) => CONSOLE_EXT.has(f.name.split('.').pop()!.toLowerCase()));
+    if (pick.length && pick.length < files.length) {
+      const sets = pick.filter(([f]) => /\.(cue|m3u)$/i.test(f.name));
+      const chosen = sets.length ? pick : [pick.reduce((a, b) => (b[0].size > a[0].size ? b : a))];
+      const disc = await detectDisc(chosen.map(([f]) => f));
+      if (!disc.ok || !disc.platform) return { ...res, disc, error: disc.error || 'No supported game found in this folder.' };
+      const [platform, runtime] = EMU_RUNTIME[disc.platform];
+      const sel = chosen.map(([, i]) => i);
+      return { ...res, files: sel.map(i => files[i]), paths: sel.map(i => paths[i]), size: sel.reduce((a, i) => a + files[i].size, 0),
+        ok: true, platform, runtime, kind: 'console-image', format: disc.format, title: disc.title, serial: disc.serial, warnings: disc.warnings, disc };
+    }
   }
 
   if (files.length === 1) {

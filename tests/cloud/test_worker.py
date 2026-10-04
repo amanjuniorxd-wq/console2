@@ -249,7 +249,7 @@ check('runtime layer: Wine + DXVK + VKD3D-Proton, shared and immutable', info['r
       and os.path.exists(os.path.join(pfx, 'drive_c/windows/system32/d3d11.dll')) and os.path.exists(os.path.join(pfx, 'drive_c/windows/syswow64/d3d9.dll'))
       and not os.path.exists(os.path.join(pfx, 'dosdevices/z:')), info['key'])
 
-# ------------------------------------------------------------ emulator profiles (RPCS3 / PCSX2 architecture, mock binaries)
+# ------------------------------------------------------------ emulator profiles (PPSSPP / PCSX2, mock binaries)
 from mishrin_worker.profiles import EmulatorProfile, EmulatorError, load_profiles, ready_runtimes, profile_for  # noqa: E402
 
 
@@ -268,14 +268,16 @@ fw = FakeWorker()
 EMU = os.path.join(HERE, '..', '..', 'cloud', 'test-games', 'emulators')
 profs = load_profiles(fw, EMU)
 names = sorted((p.name, p.runtime, p.mock) for p in profs if p.kind == 'emulator')
-check('emulator profiles discovered from emulator.json (mock RPCS3 + mock PCSX2)', names == [('pcsx2', 'ps2', True), ('rpcs3', 'ps3', True)], names)
-check('worker advertises only runtimes that can start now (Wine + firmware present)', ready_runtimes(profs) == ['x64-win', 'x86', 'ps2', 'ps3'], ready_runtimes(profs))
+check('emulator profiles discovered from emulator.json (mock PCSX2 + mock PPSSPP)', names == [('pcsx2', 'ps2', True), ('ppsspp', 'psp', True)], names)
+check('worker advertises only runtimes that can start now (Wine + firmware present)', sorted(ready_runtimes(profs)) == sorted(['x64-win', 'x86', 'ps2', 'psp']), ready_runtimes(profs))
 tmp = tempfile.mkdtemp(prefix='mishrin-emu-')
-shutil.copytree(os.path.join(EMU, 'mock-rpcs3'), os.path.join(tmp, 'nofw'))
-os.remove(os.path.join(tmp, 'nofw/home/.config/rpcs3/dev_flash/vsh/module/vsh.self'))
+shutil.copytree(os.path.join(EMU, 'mock-pcsx2'), os.path.join(tmp, 'nofw'))
+os.remove(os.path.join(tmp, 'nofw/home/.config/PCSX2/bios/mock-bios.bin'))
 nofw = EmulatorProfile(fw, os.path.join(tmp, 'nofw'))
 check('firmware missing → profile installed but its runtime is not advertised',
-      not nofw.firmware_ok() and 'ps3' not in ready_runtimes([profs[0], nofw]) and nofw.info()['firmware'] is False)
+      not nofw.firmware_ok() and 'ps2' not in ready_runtimes([profs[0], nofw]) and nofw.info()['firmware'] is False)
+psp_prof = next(p for p in profs if p.kind == 'emulator' and p.runtime == 'psp')
+check('PSP needs no firmware: profile without a firmware block is runnable', psp_prof.firmware_ok() and psp_prof.runnable())
 try:
     nofw.runtime_layer(print)
     check('firmware missing → runtime_layer raises', False)
@@ -285,7 +287,7 @@ except RuntimeError as e:
 
 def bad_spec(**over):
     d = tempfile.mkdtemp(prefix='mishrin-bad-', dir=tmp)
-    shutil.copytree(os.path.join(EMU, 'mock-rpcs3'), os.path.join(d, 'e'))
+    shutil.copytree(os.path.join(EMU, 'mock-ppsspp'), os.path.join(d, 'e'))
     spec = json.load(open(os.path.join(d, 'e/emulator.json')))
     spec.update(over)
     json.dump(spec, open(os.path.join(d, 'e/emulator.json'), 'w'))
@@ -303,8 +305,8 @@ rejected = [k for k, v in {
     'bad env': {'env': {'LD_PRELOAD;': 'x'}},
 }.items() if bad_spec(**v)]
 check('unsafe emulator.json variants rejected (9)', len(rejected) == 9, rejected)
-emu_m = validate({'id': 'p3', 'type': 'emulator', 'platform': 'ps3', 'boot': 'G/PS3_GAME/USRDIR/EBOOT.BIN',
-                  'files': [{'path': 'G/PS3_GAME/USRDIR/EBOOT.BIN', 'size': 1, 'chunks': ['a' * 64]}]})
+emu_m = validate({'id': 'psp', 'type': 'emulator', 'platform': 'psp', 'boot': 'G/EBOOT.PBP',
+                  'files': [{'path': 'G/EBOOT.PBP', 'size': 1, 'chunks': ['a' * 64]}]})
 
 
 class S:
@@ -312,25 +314,25 @@ class S:
     display = 101
 
 
-p3 = profile_for(profs, emu_m)
-argv, env, wd = p3.launch_spec(S)
+pp = profile_for(profs, emu_m)
+argv, env, wd = pp.launch_spec(S)
 check('emulator argv = profile binary + fixed flags + validated boot path (no shell)',
-      argv == ['/opt/emu/mock-emulator', '--mode=ps3', '/home/player/prefix/game/G/PS3_GAME/USRDIR/EBOOT.BIN'] and env['HOME'] == '/home/player/prefix', argv)
-check('emulator binary bound read-only into the sandbox', p3.extra_ro == ((os.path.realpath(os.path.join(EMU, 'mock-rpcs3')), '/opt/emu'),))
-lay_e = p3.runtime_layer(print)
-check('emulator layer built once, owned by the sandbox uid (template untouched)', os.stat(lay_e).st_uid == 20000 and p3.runtime_layer(print) == lay_e
-      and os.stat(os.path.join(EMU, 'mock-rpcs3', 'home')).st_uid != 20000)
+      argv == ['/opt/emu/mock-emulator', '--mode=psp', '/home/player/prefix/game/G/EBOOT.PBP'] and env['HOME'] == '/home/player/prefix', argv)
+check('emulator binary bound read-only into the sandbox', pp.extra_ro == ((os.path.realpath(os.path.join(EMU, 'mock-ppsspp')), '/opt/emu'),))
+lay_e = pp.runtime_layer(print)
+check('emulator layer built once, owned by the sandbox uid (template untouched)', os.stat(lay_e).st_uid == 20000 and pp.runtime_layer(print) == lay_e
+      and os.stat(os.path.join(EMU, 'mock-ppsspp', 'home')).st_uid != 20000)
 check('profile_for picks the Windows profile for Windows manifests', profile_for(profs, validate(cases[0]['manifest'])).kind == 'windows')
-# save scope: emulator saves only (dev_hdd0), never firmware/config
+# save scope: emulator save data only, never system/config files
 sd = tempfile.mkdtemp(prefix='mishrin-sv-')
-for rel, data in (('prefix-upper/.config/rpcs3/dev_hdd0/home/00000001/savedata/MSHR00001/SAVE.DAT', '{"x":1}'),
-                  ('prefix-upper/.config/rpcs3/dev_flash/vsh/module/vsh.self', 'fw'), ('prefix-upper/.config/rpcs3/config.yml', 'cfg')):
+for rel, data in (('prefix-upper/.config/ppsspp/PSP/SAVEDATA/MSHR00001/SAVE.DAT', '{"x":1}'),
+                  ('prefix-upper/.config/ppsspp/PSP/SYSTEM/ppsspp.ini', 'cfg'), ('prefix-upper/.config/ppsspp/PSP/SYSTEM/CACHE/x.bin', 'cache')):
     os.makedirs(os.path.dirname(os.path.join(sd, rel)), exist_ok=True)
     open(os.path.join(sd, rel), 'w').write(data)
 os.makedirs(os.path.join(sd, 'game-upper'), exist_ok=True)
-blob, raw, files = savelayer.snapshot(sd, p3.save_include, p3.save_exclude)
+blob, raw, files = savelayer.snapshot(sd, pp.save_include, pp.save_exclude)
 names_in = tarfile.open(fileobj=io.BytesIO(savelayer._decompress(blob))).getnames()
-check('emulator save layer = save data only (no firmware, no config)', names_in == ['prefix/.config/rpcs3/dev_hdd0/home/00000001/savedata/MSHR00001/SAVE.DAT'], names_in)
+check('emulator save layer = save data only (no config, no cache)', names_in == ['prefix/.config/ppsspp/PSP/SAVEDATA/MSHR00001/SAVE.DAT'], names_in)
 shutil.rmtree(tmp, ignore_errors=True)
 shutil.rmtree(sd, ignore_errors=True)
 shutil.rmtree(FakeWorker.cfg.data, ignore_errors=True)

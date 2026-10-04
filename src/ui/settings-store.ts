@@ -16,13 +16,15 @@ export interface Settings {
   emuScaling: 'sharp' | 'pixel' | 'smooth';
   /** Mishrin P1: plug a PlayStation Mouse into a port (games that support the mouse peripheral). */
   emuMouse: 'off' | 'port1' | 'port2';
+  /** Emulator games (PS1, PS2, PSP): keep the game's aspect ratio (letter/pillarbox) or stretch to fill the device viewport. */
+  emuDisplay: 'aspect' | 'stretch';
 }
 
 const KEY = 'mishrin.settings.v1';
 export const DEFAULTS: Settings = {
   runtime: 'auto', cloudQuality: 'auto', resolution: 'auto', maxFps: 60, controller: true, lowMemory: false,
   cloudEndpoint: '', autoFullscreen: true, idleShutdownMin: 10, prefetch: true, reduceEffects: false,
-  showStats: false, touchControls: 'auto', emuProfile: 'auto', emuScaling: 'pixel', emuMouse: 'off',
+  showStats: false, touchControls: 'auto', emuProfile: 'auto', emuScaling: 'pixel', emuMouse: 'off', emuDisplay: 'aspect',
 };
 
 function load(): Settings {

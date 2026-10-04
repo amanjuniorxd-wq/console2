@@ -35,7 +35,7 @@ export const FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'squa
 /** Emulator platforms the worker pool can host. The emulator is fixed per platform: clients can never pick a binary. */
 export const EMULATOR_PLATFORMS = {
   ps2: { emulator: 'pcsx2', boot: /\.(iso|chd|cue)$/i, ram: 4096, cpus: 2, storageMB: 8192 },
-  ps3: { emulator: 'rpcs3', boot: /(^|\/)EBOOT\.BIN$|\.iso$/i, ram: 8192, cpus: 4, storageMB: 65536 },
+  psp: { emulator: 'ppsspp', boot: /\.(iso|cso|pbp)$/i, ram: 1536, cpus: 2, storageMB: 4096 },
 };
 /** Analog stick directions (full deflection), bound to keys the emulator profiles map to stick axes. */
 export const STICKS = ['lup', 'ldown', 'lleft', 'lright', 'rup', 'rdown', 'rleft', 'rright'];
@@ -79,7 +79,7 @@ function validateCommon(m, out, defaults) {
   out.display = { width: d.width & ~1, height: d.height & ~1 };
 }
 
-/** PS2/PS3-class titles on an emulator worker. The worker builds argv from its own emulator profile + `boot`. */
+/** PS2-class and PSP titles on an emulator worker. The worker builds argv from its own emulator profile + `boot`. */
 function validateEmulator(m, out) {
   const plat = EMULATOR_PLATFORMS[m.platform];
   if (!plat) fail(`platform must be one of ${Object.keys(EMULATOR_PLATFORMS).join('|')}`);

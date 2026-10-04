@@ -3,7 +3,7 @@
  * Blob.slice — a 700 MB disc is never loaded into memory. Also the first line of validation: structure,
  * sizes, references between files (CUE/M3U), and path-traversal-free names.
  */
-export type Platform = 'p1' | 'p2' | 'p3' | 'p4';
+export type Platform = 'p1' | 'p2' | 'psp' | 'p4';
 export interface Detection {
   ok: boolean;
   platform?: Platform;
@@ -21,7 +21,9 @@ export const MAX_TOTAL = 64 * 1024 ** 3;     // 64 GB: covers dual-layer DVD ima
 const MAX_CD = 1024 ** 3;                      // a CD image (one track file) cannot exceed ~900 MB
 const MAX_SIDECAR = 64 * 1024;                 // .cue / .m3u text
 const NAME = /^[^\\/:*?"<>|\x00-\x1f]{1,200}$/;
-export const ACCEPT = '.cue,.bin,.img,.iso,.chd,.exe,.pbp,.m3u,.pkg';
+export const ACCEPT = '.cue,.bin,.img,.iso,.cso,.chd,.exe,.pbp,.m3u';
+/** Extensions that can belong to a console game set (used to pick candidates out of a folder selection). */
+export const CONSOLE_EXT = new Set(['cue', 'bin', 'img', 'iso', 'cso', 'chd', 'pbp', 'm3u']);
 
 const lower = (n: string) => n.toLowerCase();
 const ext = (n: string) => lower(n.split('.').pop() || '');
@@ -47,14 +49,47 @@ export function parseCue(text: string): { files: string[]; modes: string[] } {
   return { files, modes };
 }
 
+type Reader = (off: number, len: number) => Promise<Uint8Array>;
+
+/** CSO (CISO v1): deflate-compressed blocks + index. Only the blocks a read touches are inflated. */
+export async function cisoReader(f: Blob): Promise<Reader | null> {
+  const h = await bytes(f, 0, 24);
+  if (ascii(h.subarray(0, 4)) !== 'CISO') return null;
+  const total = u32le(h, 8) + u32le(h, 12) * 2 ** 32, block = u32le(h, 16), align = h[21];
+  if (!block || block > 1 << 20 || !total) return null;
+  const nblocks = Math.ceil(total / block);
+  const cache = new Map<number, Uint8Array>();
+  const blockAt = async (i: number) => {
+    if (cache.has(i)) return cache.get(i)!;
+    const ix = await bytes(f, 24 + i * 4, 8);
+    const a = u32le(ix, 0), b = u32le(ix, 4);
+    const start = (a & 0x7fffffff) * 2 ** align, end = (b & 0x7fffffff) * 2 ** align;
+    let data = await bytes(f, start, end - start);
+    if (!(a & 0x80000000)) data = new Uint8Array(await new Response(new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    cache.set(i, data);
+    return data;
+  };
+  return async (off, len) => {
+    const out = new Uint8Array(Math.max(0, Math.min(len, total - off)));
+    for (let o = 0; o < out.length;) {
+      const i = Math.floor((off + o) / block), within = (off + o) % block;
+      if (i >= nblocks) break;
+      const d = await blockAt(i), n = Math.min(out.length - o, block - within);
+      out.set(d.subarray(within, within + n), o); o += n;
+    }
+    return out;
+  };
+}
+
 /** ISO9660 reader over an image with a given sector layout (2048 cooked, 2352 raw Mode1/Mode2). */
 class Iso {
-  constructor(private f: Blob, private secSize: number, private dataOff: number) {}
-  read(lba: number, len: number) { return bytes(this.f, lba * this.secSize + this.dataOff, len); }
-  static async open(f: Blob): Promise<Iso | null> {
+  constructor(private rd: Reader, private secSize: number, private dataOff: number) {}
+  read(lba: number, len: number) { return this.rd(lba * this.secSize + this.dataOff, len); }
+  static async open(f: Blob | Reader): Promise<Iso | null> {
+    const rd: Reader = typeof f === 'function' ? f : (o, l) => bytes(f, o, l);
     for (const [size, off] of [[2048, 0], [2352, 24], [2352, 16]] as const) {
-      const pvd = await new Iso(f, size, off).read(16, 2048);
-      if (pvd.length >= 190 && pvd[0] === 1 && ascii(pvd.subarray(1, 6)) === 'CD001') return new Iso(f, size, off);
+      const pvd = await new Iso(rd, size, off).read(16, 2048);
+      if (pvd.length >= 190 && pvd[0] === 1 && ascii(pvd.subarray(1, 6)) === 'CD001') return new Iso(rd, size, off);
     }
     return null;
   }
@@ -79,17 +114,52 @@ class Iso {
     const e = (await this.list()).get(name.toUpperCase());
     return e && !e.dir && e.size < 64 * 1024 ? new TextDecoder().decode(await this.read(e.lba, e.size)) : null;
   }
+  /** Bytes of a file one directory deep, e.g. ('PSP_GAME', 'PARAM.SFO'). */
+  async sub(dir: string, name: string) {
+    const d = (await this.list()).get(dir);
+    const e = d?.dir ? (await this.list(d.lba, d.size)).get(name) : undefined;
+    return e && !e.dir && e.size < 64 * 1024 ? this.read(e.lba, e.size) : null;
+  }
+}
+
+const UNSUPPORTED_PS3 = 'PS3 games are not supported by Mishrin.';
+
+/** PSP title from PARAM.SFO (TITLE / DISC_ID / CATEGORY). */
+function sfoInfo(b: Uint8Array | null): { title?: string; serial?: string; category?: string } {
+  if (!b || b.length < 20 || ascii(b.subarray(0, 4)) !== '\0PSF') return {};
+  const keyTab = u32le(b, 8), dataTab = u32le(b, 12), n = u32le(b, 16), out: Record<string, string> = {};
+  for (let i = 0; i < n && 20 + i * 16 + 16 <= b.length; i++) {
+    const e = 20 + i * 16, kOff = keyTab + (b[e] | (b[e + 1] << 8)), fmt = b[e + 2] | (b[e + 3] << 8), len = u32le(b, e + 4), dOff = dataTab + u32le(b, e + 12);
+    let k = kOff; while (k < b.length && b[k]) k++;
+    if (fmt === 0x0204) out[ascii(b.subarray(kOff, k))] = new TextDecoder().decode(b.subarray(dOff, dOff + len)).replace(/\0+$/, '');
+  }
+  return { title: out.TITLE, serial: out.DISC_ID, category: out.CATEGORY };
+}
+
+/** EBOOT.PBP: PSone classic (CATEGORY ME → P1) or PSP game/homebrew (→ PSP). */
+export async function classifyPbp(f: Blob): Promise<{ platform?: Platform; title?: string; serial?: string; error?: string }> {
+  const h = await bytes(f, 0, 40);
+  if (h[0] !== 0 || ascii(h.subarray(1, 4)) !== 'PBP') return { error: 'Not a PBP file.' };
+  const sfoOff = u32le(h, 8), next = u32le(h, 12);
+  const s = sfoInfo(next > sfoOff && next - sfoOff < 65536 ? await bytes(f, sfoOff, next - sfoOff) : null);
+  if (s.category === 'ME') return { platform: 'p1', title: s.title, serial: s.serial };
+  return { platform: 'psp', title: s.title, serial: s.serial };
 }
 
 /** Classify a data disc by its filesystem: SYSTEM.CNF BOOT/BOOT2, PS3_GAME, etc. */
-async function classifyDisc(f: Blob): Promise<{ platform?: Platform; title?: string; serial?: string; warning?: string }> {
+async function classifyDisc(f: Blob | Reader): Promise<{ platform?: Platform; title?: string; serial?: string; warning?: string; unsupported?: string }> {
   const iso = await Iso.open(f);
   if (!iso) return { warning: 'No ISO 9660 filesystem found (audio-only or unusual disc).' };
   const pvd = await iso.pvd();
   const system = ascii(pvd.subarray(8, 40)).trim();
   const volume = ascii(pvd.subarray(40, 72)).trim();
   const root = await iso.list();
-  if (root.has('PS3_GAME') || root.has('PS3_DISC.SFB') || system.includes('PS3')) return { platform: 'p3', title: volume };
+  if (root.has('PS3_GAME') || root.has('PS3_DISC.SFB') || system.includes('PS3')) return { unsupported: UNSUPPORTED_PS3, title: volume };
+  if (root.has('PSP_GAME') || root.has('UMD_DATA.BIN') || system.startsWith('PSP GAME')) {
+    const s = sfoInfo(await iso.sub('PSP_GAME', 'PARAM.SFO'));
+    const umd = root.has('UMD_DATA.BIN') ? await iso.file('UMD_DATA.BIN') : null;
+    return { platform: 'psp', title: s.title || volume, serial: s.serial || umd?.split('|')[0] };
+  }
   const cnf = root.has('SYSTEM.CNF') ? await iso.file('SYSTEM.CNF') : null;
   if (cnf) {
     const boot2 = cnf.match(/^\s*BOOT2\s*=\s*cdrom0?:\\?([^;\s]+)/im);
@@ -125,7 +195,7 @@ export async function detect(input: File[]): Promise<Detection> {
   const res: Detection = { ok: false, files, size, warnings: [] };
   const fail = (error: string) => ({ ...res, error });
   if (!files.length) return fail('No file selected.');
-  if (files.length > 64) return fail('Too many files selected.');
+  if (files.length > 64) return fail('Select one game at a time: a disc image, or a CUE/M3U with the files it lists.');
   for (const f of files) if (!NAME.test(f.name)) return fail(`Unsafe file name: ${JSON.stringify(f.name)}`);
   if (new Set(files.map(f => lower(f.name))).size !== files.length) return fail('Duplicate file names.');
   if (size > MAX_TOTAL) return fail('Selection exceeds 64 GB.');
@@ -152,6 +222,7 @@ export async function detect(input: File[]): Promise<Detection> {
     }
     const data = byName.get(lower(refs[0]))!;
     const c = await classifyDisc(data);
+    if (c.unsupported) return fail(c.unsupported);
     if (c.warning) res.warnings.push(c.warning);
     if (modes.some(m => !/^(MODE1\/2048|MODE1\/2352|MODE2\/2352|MODE2\/2336|AUDIO)$/.test(m))) return fail(`Unsupported track mode in CUE: ${modes.join(', ')}`);
     return { ...res, ok: !!c.platform, platform: c.platform, format: 'cue+bin', primary: cue.name, title: c.title, serial: c.serial, error: c.platform ? undefined : 'Not a recognised console disc.' };
@@ -164,9 +235,20 @@ export async function detect(input: File[]): Promise<Detection> {
     if (f.size > 2 * 1024 * 1024) return fail('Executable larger than console RAM.');
     return { ...res, ok: true, platform: 'p1', format: 'exe', primary: f.name, title: f.name.replace(/\.[^.]+$/, '') };
   }
-  if (head[0] === 0 && ascii(head.subarray(1, 4)) === 'PBP') return { ...res, ok: true, platform: 'p1', format: 'pbp', primary: f.name, title: f.name.replace(/\.[^.]+$/, ''), warnings: ['PBP images: P1-class content only.'] };
+  if (head[0] === 0 && ascii(head.subarray(1, 4)) === 'PBP') {
+    const c = await classifyPbp(f);
+    if (c.error) return fail(c.error);
+    return { ...res, ok: true, platform: c.platform, format: 'pbp', primary: f.name, title: c.title || f.name.replace(/\.[^.]+$/, ''), serial: c.serial };
+  }
+  if (ascii(head.subarray(0, 4)) === 'CISO') {
+    const rd = await cisoReader(f);
+    const c = rd ? await classifyDisc(rd) : { warning: 'Damaged CSO header.' } as Awaited<ReturnType<typeof classifyDisc>>;
+    if (c.unsupported) return fail(c.unsupported);
+    if (c.platform !== 'psp') return fail(c.warning || 'This CSO image is not a PSP game.');
+    return { ...res, ok: true, platform: 'psp', format: 'cso', primary: f.name, title: c.title, serial: c.serial };
+  }
   if (head[0] === 0x7f && ascii(head.subarray(1, 4)) === 'CNT') return { ...res, ok: true, platform: 'p4', format: 'pkg', primary: f.name, title: f.name };
-  if (head[0] === 0x7f && ascii(head.subarray(1, 4)) === 'PKG') return { ...res, ok: true, platform: 'p3', format: 'pkg', primary: f.name, title: f.name };
+  if (head[0] === 0x7f && ascii(head.subarray(1, 4)) === 'PKG') return fail('PKG packages are not supported. Upload the game image (ISO/CSO) or game folder instead.');
   if (ascii(head.subarray(0, 8)) === 'MComprHD') {
     const c = await classifyChd(f);
     if (c.error) return fail(c.error);
@@ -176,6 +258,7 @@ export async function detect(input: File[]): Promise<Detection> {
     if (e !== 'iso' && f.size > MAX_CD) return fail('Image is larger than any CD; DVD images use .iso.');
     if (f.size % 2048 && f.size % 2352 && f.size % 2336) res.warnings.push('Image size is not a whole number of sectors.');
     const c = await classifyDisc(f);
+    if (c.unsupported) return fail(c.unsupported);
     if (c.warning) res.warnings.push(c.warning);
     if (!c.platform) return fail(c.warning || 'Not a recognised console disc image.');
     if (e === 'bin' && f.size % 2352 === 0) res.warnings.push('No CUE sheet: assuming a single data track.');

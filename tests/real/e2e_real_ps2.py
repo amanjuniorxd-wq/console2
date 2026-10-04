@@ -165,8 +165,8 @@ async def main():
           ne_.get('installed') and ne_.get('status') == 'BIOS_REQUIRED' and 'ps2' not in nob.get('runtimes', []), f"{ne_.get('status')} · {ne_.get('firmwareDetail')}")
     rep = api('GET', '/api/runtimes')[1]['runtimes'].get('ps2', {})
     rf, nf = real.get('flags') or {}, nob.get('flags') or {}
-    check('worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/rpcs3)', rf.get('pcsx2') and nf.get('pcsx2') and rf.get('cpu') and 'rpcs3' in rf and 'vulkan' in rf,
-          {k: rf.get(k) for k in ('cpu', 'gpu', 'hardwareGpu', 'vulkan', 'opengl', 'pcsx2', 'rpcs3')})
+    check('worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/ppsspp)', rf.get('pcsx2') and nf.get('pcsx2') and rf.get('cpu') and 'ppsspp' in rf and 'vulkan' in rf,
+          {k: rf.get(k) for k in ('cpu', 'gpu', 'hardwareGpu', 'vulkan', 'opengl', 'pcsx2', 'ppsspp')})
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path='/opt/pw-browsers/chromium', args=['--disable-features=WebRtcHideLocalIpsWithMdns', '--autoplay-policy=no-user-gesture-required'])

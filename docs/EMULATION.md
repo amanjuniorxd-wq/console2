@@ -10,7 +10,7 @@ P1 boots with PCSX-ReARMed's open HLE BIOS replacement; a user may add their own
 |---|---|---|---|
 | **Mishrin P1** | PlayStation-1-class | **Working** | Boots EXE / CUE+BIN / BIN / ISO / CHD / M3U in Chromium and in V8 (Node); 60 fps; keyboard, gamepad, touch and mouse (virtual console mouse on port 1 or 2) input; save/load state (bit-exact replay); memory card persists across sessions; fullscreen; Canvas 2D and WebGPU scaling; AudioWorklet audio with no steady-state underruns. Verified with an **original homebrew test program** (`emulators/p1/testgame`). Commercial games were not tested: none can be included. |
 | **Mishrin P2** | PlayStation-2-class | **In development** | Discs and CHDs are detected. No local core ships. A cloud path (upload with consent → PCSX2 worker profile) exists and is tested with a *mock* emulator only. |
-| **Mishrin P3 Cloud** | PlayStation-3-class | **Architecture ready · runtime not deployed** | Game folders, ISOs and PKGs are detected. A browser cannot run it; the cloud path (RPCS3 worker profile) is implemented and tested with a *mock* RPCS3. See docs/universal-runtime-architecture.md. |
+| **Mishrin PSP** | PSP | **Ready (cloud)** | ISO, CSO, EBOOT.PBP and PSP game folders are detected in the browser (CSO blocks inflated on demand). No local WASM core; the cloud path runs real PPSSPP 1.20.4 on a worker (no firmware needed), verified with an original test program (`emulators/psp/testapp`, `npm run test:real-psp`). |
 | **Mishrin P4** | PlayStation-4-class | **Research** | PKG files are detected. No emulator. Feasibility notes below. |
 
 Every disabled button says **Experimental — coming soon** or **Research — not available**. Nothing pretends to run.
@@ -54,8 +54,15 @@ no network request, and its compiled `WebAssembly.Module` is reused in-page.
 | PS-X `.exe` | Homebrew executables. |
 | `.m3u` | Multi-disc playlists (every listed file must be selected). Tested with a one-entry playlist. Disc swapping inside a game is not exposed yet. |
 
-Detected but not runnable: P2 DVD ISO/CHD (`BOOT2` in `SYSTEM.CNF`, or DVD metadata in a CHD), P3 disc layouts
-(`PS3_GAME`) and PKG (`\x7FPKG`), P4 PKG (`\x7FCNT`).
+Detected and routed to the cloud: P2 DVD ISO/CHD (`BOOT2` in `SYSTEM.CNF`, or DVD metadata in a CHD), PSP ISO/CSO/
+EBOOT.PBP (PSone-classic PBPs, `CATEGORY=ME`, stay on P1). Refused with a clear message: PS3 discs and folders
+(`PS3_GAME`) — PS3 is not supported — and PKG files. P4 PKG (`\x7FCNT`): research only.
+
+Display (PS1, PS2, PSP): **Original Aspect Ratio** (default; letter/pillarbox) or **Stretch to Device Resolution**
+(fills the screen, intentional distortion), in Settings → Display and in the in-game Resolution panel. Both are GPU
+compositor scaling of the game's native framebuffer/stream (`object-fit: contain | fill`); the internal resolution is
+never raised. Tested at 1080p, 1440p, 4K, Retina (DPR 2), ultrawide, 4:3, live resize and fullscreen
+(`tests/emu/e2e_display.py`).
 
 ## Validation and security
 
@@ -119,7 +126,7 @@ Sources: `tests/emu/core.test.ts` and `tests/emu/e2e_emu.py` print these values 
 | Chromium / Chrome (desktop) | **Tested** (all P1 checks pass, including a mobile viewport with touch) |
 | Firefox, Safari, Chrome on Android/iOS | **Not tested here.** The required features exist in current versions (WASM SIMD, OffscreenCanvas 2D in workers, FileReaderSync, OPFS sync access handles, AudioWorklet). The console falls back to IndexedDB storage, Canvas 2D presentation and MessagePort audio when a feature is missing, but these paths are verified only in Chromium. |
 
-## P2 / P3 / P4 feasibility (why they are not running)
+## P2 / P4 feasibility (why they are not running)
 
 **P2 (PS2-class): Experimental.** The only realistic browser candidate is **Play!** (BSD-2-Clause, github.com/jpd002/Play-).
 Its upstream web build (commit `83700b2`) requires:
@@ -132,11 +139,6 @@ Its upstream web build (commit `83700b2`) requires:
 Upstream describes its browser compatibility as limited. **To add it:** build Play! with Emscripten 4.0.1, wrap it as
 `backends/p2.ts` (`EmulatorBackend`), serve it from a COOP/COEP-isolated route, set `CORES.p2.available = true`,
 then run the same test suites with an original P2-class test program.
-
-**P3 (PS3-class): Research.** RPCS3 relies on LLVM JIT compilation of PowerPC (PPU) and SPU code into native host code,
-fast multi-threaded SPU emulation and Vulkan. A browser offers WebAssembly (no native code, no LLVM at runtime,
-interpreter-class speed for a 3.2 GHz Cell), limited shared-memory threading, and WebGPU. Full-speed emulation is not
-feasible today. What exists: detection, UI slot, registry entry.
 
 **P4 (PS4-class): Research.** Existing PS4 emulators (shadPS4, fpPS4) run the game's x86-64 code natively on the host CPU
 and translate GPU work to Vulkan. A browser cannot execute native x86-64. A WebAssembly x86-64 emulator plus AMD GCN GPU

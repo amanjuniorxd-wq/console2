@@ -1,5 +1,5 @@
 // Mishrin Cloud scheduler — zero dependencies (Node 18+).
-// Matches console sessions to isolated workers (Windows/Wine, PS2-/PS3-class emulator workers, legacy WASM nodes),
+// Matches console sessions to isolated workers (Windows/Wine, PS2-class and PSP emulator workers, legacy WASM nodes),
 // relays WebRTC signaling (media never passes through here), stores content-addressed chunks, uploads and save
 // layers, queues players when every worker is busy, and recovers sessions from worker failure.
 //
@@ -15,9 +15,10 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateManifest, manifestHash, peInfo, uploadManifest, runtimeOf, relPath, ManifestError, EMULATOR_PLATFORMS } from './lib/manifest.mjs';
 import { selectWorker, alive, capable, WORKER_TIMEOUT } from './lib/select.mjs';
-import { fsStorage, CHUNK, HASH } from './lib/storage.mjs';
+import { fsStorage, chunkedReader, CHUNK, HASH } from './lib/storage.mjs';
 import { createAuth } from './lib/auth.mjs';
 import { inspectUpload, InspectError } from './lib/inspect.mjs';
+import { archiveKind, expandArchive, ArchiveError, archiveSupport } from './lib/archive.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = +(process.env.PORT || 8787);
@@ -25,6 +26,7 @@ const ICE = JSON.parse(process.env.ICE_SERVERS || '[]');
 const DATA = process.env.DATA_DIR || join(HERE, '.data');
 const GAMES_DIR = process.env.GAMES_DIR || join(HERE, 'games');
 const MAX_PKG = +(process.env.MAX_PACKAGE_MB || 1024) * 1048576;
+const MAX_PENDING_UPLOADS = +(process.env.MAX_PENDING_UPLOADS || 256);   // backpressure: declared-but-unfinished uploads
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const HB_TIMEOUT = +(process.env.CLIENT_HEARTBEAT_TIMEOUT_MS || 45_000);
@@ -34,7 +36,7 @@ const TICKET_IDLE = +(process.env.QUEUE_TICKET_IDLE_MS || 20_000);
 const TICKET_CLAIM = +(process.env.QUEUE_CLAIM_MS || 30_000);
 const MANIFEST_RUNTIMES = new Set(['x64-win', 'x86', ...Object.keys(EMULATOR_PLATFORMS)]);
 const WINDOWS = new Set(['x64-win', 'x86']);
-const NAMES = { 'x64-win': 'Windows', x86: 'Windows', linux: 'Linux', ps2: 'PS2-class', ps3: 'PS3-class', wasm: 'WASM' };
+const NAMES = { 'x64-win': 'Windows', x86: 'Windows', linux: 'Linux', ps2: 'PS2-class', psp: 'PSP', wasm: 'WASM' };
 for (const d of [DATA, GAMES_DIR, join(DATA, 'uploads')]) mkdirSync(d, { recursive: true });
 if (!WORKER_TOKEN) console.warn('[scheduler] WORKER_TOKEN not set: worker endpoints are open (development mode)');
 
@@ -61,6 +63,11 @@ const persistSaves = () => persistJson(SAVES_DB, Object.fromEntries(saves));
 const UPLOADS_DB = join(DATA, 'uploads.json');
 for (const [k, v] of existsSync(UPLOADS_DB) ? Object.entries(JSON.parse(readFileSync(UPLOADS_DB, 'utf8'))) : []) uploads.set(k, v);
 const persistUploads = () => persistJson(UPLOADS_DB, Object.fromEntries(uploads));
+/** archive content key → extracted file list (content-addressed chunks; reused instead of re-extracting) */
+const ARCHIVES_DB = join(DATA, 'archives.json');
+const archives = new Map(existsSync(ARCHIVES_DB) ? Object.entries(JSON.parse(readFileSync(ARCHIVES_DB, 'utf8'))) : []);
+const publicUpload = u => ({ id: u.id, platform: u.platform, runtime: u.runtime, title: u.title, serial: u.serial || '', boot: u.boot || '', format: u.format || u.archive || '',
+  ...(u.platform === 'ps1' ? { files: (u.files || []).map(f => ({ path: f.path, size: f.size })) } : {}) });
 
 for (const f of existsSync(GAMES_DIR) ? readdirSync(GAMES_DIR) : []) {
   if (!f.endsWith('.json')) continue;
@@ -212,10 +219,10 @@ const deployed = rt => liveHosts().some(h => h.runtimes.has(rt));
 const fitsAnywhere = need => liveHosts().some(h => h.runtimes.has(need.runtime) && capable(h, need.runtime)
   && (!need.ramMB || !h.caps.resources?.ramMB || h.caps.resources.ramMB - 1024 >= need.ramMB)
   && (!need.gpu || h.kind !== 'worker' || h.caps.resources?.gpu?.available));
-/** Operator defaults for uploaded titles, e.g. UPLOAD_DEFAULTS='{"ps3":{"ram":4096}}' (falls back to platform defaults). */
+/** Operator defaults for uploaded titles, e.g. UPLOAD_DEFAULTS='{"ps2":{"ram":4096}}' (falls back to platform defaults). */
 const UPLOAD_DEFAULTS = JSON.parse(process.env.UPLOAD_DEFAULTS || '{}');
-/** Session display per console class: PCSX2 1.6 renders a 640x480 window (4:3); RPCS3 uses the 1280x720 default. */
-const PLATFORM_DISPLAY = { ps2: { width: 640, height: 480 } };
+/** Session display per console class: PCSX2 1.6 renders a 640x480 window (4:3); PPSSPP at the PSP's native 480x272 (the browser's GPU scales it to the device). */
+const PLATFORM_DISPLAY = { ps2: { width: 640, height: 480 }, psp: { width: 480, height: 272 } };
 
 async function createSession(req, b) {
   const rt = b?.game?.runtime;
@@ -329,7 +336,7 @@ function runtimeReport() {
     }
   }
   for (const r of Object.values(out)) { r.free = Math.max(0, r.capacity - r.active - r.held); r.queued = waitingFor(r.runtime).length; }
-  return { runtimes: out, sessions: sessions.size, auth: { required: auth.required, clientKeys: auth.clientKeysConfigured } };
+  return { runtimes: out, sessions: sessions.size, auth: { required: auth.required, clientKeys: auth.clientKeysConfigured }, uploads: { archives: archiveSupport().available } };
 }
 
 function registerHost(b, kind) {
@@ -375,7 +382,7 @@ const uploadId = (owner, files) => createHash('sha256').update(JSON.stringify([o
 const pendingUploads = new Map(); // id → { id, owner, files, title, created }
 function missingChunks(files) { return [...new Set(files.flatMap(f => f.chunks))].filter(c => !store.has(c)); }
 
-function completeUpload(u) {
+async function completeUpload(u) {
   const missing = missingChunks(u.files);
   if (missing.length) return [409, { error: 'Upload incomplete.', missing: missing.slice(0, 1000), count: missing.length }];
   for (const f of u.files) {                                // every chunk must have the size its position implies
@@ -383,20 +390,37 @@ function completeUpload(u) {
     const ok = sizes.every((sz, i) => sz === (i < f.chunks.length - 1 ? CHUNK : f.size - CHUNK * (f.chunks.length - 1)));
     if (!ok) return [422, { error: `Chunk sizes do not add up for ${f.path}.` }];
   }
+  // ZIP / RAR / 7z (by magic bytes): extracted once on the server, then inspected like a folder upload. The expansion
+  // is cached by archive content, so the same archive (re-)uploaded by anyone is never extracted twice.
+  let files = u.files, archive = null;
+  if (u.files.length === 1 && u.files[0].size && (archive = archiveKind(chunkedReader(store, u.files[0]).read(0, 8)))) {
+    const key = createHash('sha256').update(u.files[0].chunks.join()).digest('hex');
+    files = archives.get(key)?.files;
+    if (!files || files.some(f => f.chunks.some(c => !store.has(c)))) {
+      try { files = await expandArchive(u.files[0], store); } catch (e) { if (e instanceof ArchiveError) return [e.status, { error: e.message }]; throw e; }
+      archives.set(key, { files, created: Date.now() }); persistJson(ARCHIVES_DB, Object.fromEntries(archives));
+    }
+  }
   let info;
-  try { info = inspectUpload(u.files, store); } catch (e) { if (e instanceof InspectError) return [e.status, { error: e.message }]; throw e; }
+  try { info = inspectUpload(files, store, { ps1: !!archive }); } catch (e) { if (e instanceof InspectError) return [e.status, { error: archive ? `${archive.toUpperCase()} archive: ${e.message}` : e.message }]; throw e; }
   const title = (u.title || info.title || 'Uploaded game').slice(0, 80);
   const mid = `up-${u.id.slice(0, 20)}`;
+  if (info.platform === 'ps1') {                            // runs locally (P1): the owner downloads the extracted game
+    const keep = files.filter(f => f.path === info.boot || !/\.(exe|txt|nfo|url|jpg|png|pdf|html?)$/i.test(f.path)).slice(0, 64);
+    const rec = { id: u.id, owner: u.owner, platform: 'ps1', runtime: 'p1', title, files: keep, created: Date.now(), archive };
+    uploads.set(u.id, rec); pendingUploads.delete(u.id); persistUploads();
+    log(`upload ${u.id.slice(0, 8)} complete: ps1 "${title}" from ${archive} (${files.length} files, returned to the browser)`);
+    return [201, { id: u.id, platform: 'ps1', runtime: 'p1', title, files: keep.map(f => ({ path: f.path, size: f.size })), format: archive }];
+  }
   const manifest = info.platform === 'windows'
-    ? (u.files.length === 1
-      ? validateManifest({ id: mid, title, type: 'windows', runtime: 'wine', executable: 'game.exe', files: [{ ...u.files[0], path: 'game.exe' }], arch: info.arch, network: false, graphics: 'auto', requirements: { ram: 2048, gpu: true, maxMinutes: 240 } })
-      : null)
-    : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files: u.files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}), ...(PLATFORM_DISPLAY[info.platform] ? { display: PLATFORM_DISPLAY[info.platform] } : {}) });
-  if (!manifest) return [422, { error: 'Upload a single Windows .exe.' }];
-  const rec = { id: u.id, owner: u.owner, manifest, platform: info.platform, runtime: runtimeOf(manifest), title, serial: info.serial || '', created: Date.now() };
+    ? (files.length === 1
+      ? validateManifest({ id: mid, title, type: 'windows', runtime: 'wine', executable: 'game.exe', files: [{ ...files[0], path: 'game.exe' }], arch: info.arch, network: false, graphics: 'auto', requirements: { ram: 2048, gpu: true, maxMinutes: 240 } })
+      : validateManifest({ id: mid, title, type: 'windows', runtime: 'wine', executable: info.executable, files, arch: info.arch, network: false, graphics: 'auto', requirements: { ram: 2048, gpu: true, maxMinutes: 240 } }))
+    : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}), ...(PLATFORM_DISPLAY[info.platform] ? { display: PLATFORM_DISPLAY[info.platform] } : {}) });
+  const rec = { id: u.id, owner: u.owner, manifest, platform: info.platform, runtime: runtimeOf(manifest), title, serial: info.serial || '', boot: info.boot || info.executable || '', format: info.format || '', archive, created: Date.now() };
   uploads.set(u.id, rec); pendingUploads.delete(u.id); persistUploads();
-  log(`upload ${u.id.slice(0, 8)} complete: ${info.platform} "${title}" (${u.files.length} files)`);
-  return [201, { id: u.id, platform: info.platform, runtime: rec.runtime, title, serial: rec.serial, manifestHash: manifestHash(manifest) }];
+  log(`upload ${u.id.slice(0, 8)} complete: ${info.platform} "${title}" (${files.length} files${archive ? ` from ${archive}` : ''})`);
+  return [201, { id: u.id, platform: info.platform, runtime: rec.runtime, title, serial: rec.serial, boot: rec.boot, format: rec.format || archive || '', manifestHash: manifestHash(manifest) }];
 }
 
 const server = http.createServer(async (req, res) => {
@@ -437,10 +461,20 @@ const server = http.createServer(async (req, res) => {
       if (auth.required && !owner) return send(res, 401, { error: 'Sign-in required (device token).' });
       const files = uploadFiles(b.files);
       const id = uploadId(owner, files);
-      if (uploads.has(id)) { const u = uploads.get(id); return send(res, 200, { id, state: 'complete', missing: [], platform: u.platform, runtime: u.runtime, title: u.title }); }
+      if (uploads.has(id)) return send(res, 200, { ...publicUpload(uploads.get(id)), state: 'complete', missing: [] });
+      if (!pendingUploads.has(id) && pendingUploads.size >= MAX_PENDING_UPLOADS) return send(res, 429, { error: 'Too many uploads in progress on this cloud; try again shortly.' });
       if (!pendingUploads.has(id)) pendingUploads.set(id, { id, owner, files, title: typeof b.title === 'string' ? b.title.slice(0, 80) : '', created: Date.now() });
       const missing = missingChunks(files);
       return send(res, 200, { id, state: 'pending', chunkSize: CHUNK, missing, total: new Set(files.flatMap(f => f.chunks)).size });
+    }
+    // extracted files of a PS1 game found inside an archive: streamed back to the owner only (P1 runs it locally)
+    m = p.match(/^\/api\/uploads\/([a-f0-9]{32})\/files\/(\d{1,3})$/);
+    if (m && req.method === 'GET') {
+      const u = uploads.get(m[1]), f = u?.platform === 'ps1' ? u.files?.[+m[2]] : null;
+      if (!f || (u.owner && u.owner !== ownerOf(req))) return send(res, 404, { error: 'Not found.' });
+      res.writeHead(200, { ...cors, 'content-type': 'application/octet-stream', 'content-length': f.size, 'cache-control': 'private, no-store' });
+      for (const c of f.chunks) for await (const b of store.stream(c)) if (!res.write(b)) await new Promise(ok => res.once('drain', ok));
+      return res.end();
     }
     m = p.match(/^\/api\/uploads\/([a-f0-9]{32})(?:\/(chunks)\/([a-f0-9]{64})|\/(complete))?$/);
     if (m) {
@@ -452,8 +486,8 @@ const server = http.createServer(async (req, res) => {
         store.put(m[3], await readBody(req, CHUNK + 1));
         return send(res, 201, { stored: true });
       }
-      if (m[4] && req.method === 'POST') { if (uploads.has(m[1])) return send(res, 200, { id: m[1], platform: u.platform, runtime: u.runtime, title: u.title }); const [c, body] = completeUpload(u); return send(res, c, body); }
-      if (!m[2] && !m[4] && req.method === 'GET') return uploads.has(m[1]) ? send(res, 200, { id: m[1], state: 'complete', platform: u.platform, runtime: u.runtime, title: u.title }) : send(res, 200, { id: m[1], state: 'pending', missing: missingChunks(u.files) });
+      if (m[4] && req.method === 'POST') { if (uploads.has(m[1])) return send(res, 200, publicUpload(u)); const [c, body] = await completeUpload(u); return send(res, c, body); }
+      if (!m[2] && !m[4] && req.method === 'GET') return uploads.has(m[1]) ? send(res, 200, { ...publicUpload(u), state: 'complete' }) : send(res, 200, { id: m[1], state: 'pending', missing: missingChunks(u.files) });
       return send(res, 405, { error: 'Method not allowed' });
     }
 

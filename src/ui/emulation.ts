@@ -19,7 +19,7 @@ const LEGAL = 'Use only games and BIOS files you own and are legally entitled to
 const maturityChip = (m: Maturity) => `<span class="badge maturity-${m}">${MATURITY_LABEL[m]}</span>`;
 
 // ------------------------------------------------------------------ Upload Game
-const ACCEPT_ALL = `${ACCEPT},.wasm,.html,.htm`;
+const ACCEPT_ALL = `${ACCEPT},.wasm,.html,.htm,.zip,.rar,.7z`;
 
 export function upload(el: HTMLElement) {
   el.innerHTML = `<div class="page">
@@ -27,13 +27,18 @@ export function upload(el: HTMLElement) {
 <p class="note legal">${LEGAL}</p>
 <label class="dropzone" tabindex="0" data-autofocus>${ic.upload}<b>Choose game files</b><span>${esc(ACCEPT_ALL.replaceAll(',', ' '))} · select a CUE together with its BIN files</span>
 <input type="file" multiple accept="${ACCEPT_ALL}" hidden data-files></label>
-<div class="actions" style="margin-top:12px"><button class="btn btn-sm" data-folder>${ic.file}Choose a game folder</button><input type="file" hidden webkitdirectory multiple data-dir></div>
+<div class="actions upload-modes" style="margin-top:12px"><button class="btn btn-sm" data-pick>${ic.file}Select Files</button><button class="btn btn-sm" data-folder>${ic.file}Select Game Folder</button><button class="btn btn-sm" data-zip>${ic.file}Read ZIP / RAR</button>
+<input type="file" hidden webkitdirectory multiple data-dir><input type="file" hidden accept=".zip,.rar,.7z,application/zip,application/vnd.rar,application/x-7z-compressed" data-archive></div>
 <div class="detect" aria-live="polite"></div></div>`;
   const zone = el.querySelector<HTMLLabelElement>('.dropzone')!;
   const input = el.querySelector<HTMLInputElement>('[data-files]')!;
   const dir = el.querySelector<HTMLInputElement>('[data-dir]')!;
   const out = el.querySelector<HTMLElement>('.detect')!;
+  const arc = el.querySelector<HTMLInputElement>('[data-archive]')!;
   el.querySelector<HTMLButtonElement>('[data-folder]')!.onclick = () => dir.click();
+  el.querySelector<HTMLButtonElement>('[data-pick]')!.onclick = () => input.click();
+  el.querySelector<HTMLButtonElement>('[data-zip]')!.onclick = () => arc.click();
+  arc.onchange = () => arc.files?.length && handle([...arc.files]);
   zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
   const handle = async (files: File[]) => {
     out.innerHTML = '<p class="note">Checking files…</p>';
@@ -48,6 +53,7 @@ export function upload(el: HTMLElement) {
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('over'); if (e.dataTransfer?.files.length) handle([...e.dataTransfer.files]); });
 
   async function render(d: UniversalDetection, ms: number) {
+    if (d.ok && d.kind === 'archive') return renderArchive(out, d, ms);
     if (!d.ok || !d.runtime) { out.innerHTML = `<div class="setrow"><div><span class="lbl">Can't use these files</span><span class="hint err">${esc(d.error || 'Unknown format.')}</span></div></div>`; return; }
     const rt = byRuntimeId(d.runtime);
     const caps = await probe();
@@ -91,7 +97,7 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
       return;
     }
     if (rt.maturity === 'research' || !rt.cloudRuntimes?.length) return disabled('Research — not available');
-    // PS2/PS3-class: cloud only, and only after the player explicitly authorizes the upload to *their* cloud.
+    // PS2/PSP: cloud only, and only after the player explicitly authorizes the upload to *their* cloud.
     if (live.requires && !live.ok) acts.insertAdjacentHTML('beforeend', setupBox(rt, live));
     if (!live.ok && live.state !== 'mock-only') return disabled(live.state === 'no-cloud' ? 'Needs your cloud (Settings → Cloud Gaming)' : `${rt.name}: ${live.label}`);
     // the emulator actually deployed decides which container formats it accepts (validated, not assumed)
@@ -123,8 +129,47 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
   }
 }
 
+/** ZIP / RAR / 7z: one file, uploaded as is; the cloud extracts it safely and routes by the extracted contents. */
+function renderArchive(out: HTMLElement, d: UniversalDetection, ms: number) {
+  const a = d.archive!;
+  out.innerHTML = `<div class="emu-card" data-runtime="archive" data-archive-kind="${a.kind}">
+<div class="emu-head"><span class="emu-name">${esc(a.kind.toUpperCase())} archive</span></div>
+<div class="kv"><span>File</span><b>${esc(d.paths[0])}</b><span>Size</span><b>${fmtBytes(d.size)}</b>
+<span>Contents</span><b>${a.entries.length ? `${a.entries.length} files listed from the archive index` : 'listed by the cloud'}</b><span>Checked in</span><b>${ms.toFixed(0)} ms (index only — not extracted here)</b></div>
+${d.warnings.length ? `<p class="note" data-likely>${d.warnings.map(esc).join('<br>')}</p>` : ''}
+<div class="actions" style="margin-top:16px"></div><div class="bar" hidden><i></i></div><p class="note" data-prog hidden></p></div>`;
+  const acts = out.querySelector<HTMLElement>('.actions')!, bar = out.querySelector<HTMLElement>('.bar')!, prog = out.querySelector<HTMLElement>('[data-prog]')!;
+  const setBar = (f: number, text = '') => { bar.hidden = false; (bar.firstElementChild as HTMLElement).style.width = `${Math.round(f * 100)}%`; if (text) { prog.hidden = false; prog.textContent = text; } };
+  if (!settings.cloudEndpoint) { const b = h('button', 'btn', 'Needs your cloud (Settings → Cloud Gaming)'); b.disabled = true; acts.append(b); return; }
+  const consent = h('label', 'consent');
+  consent.innerHTML = `<input type="checkbox" data-consent> I own this game and authorize uploading ${fmtBytes(d.size)} to my cloud (${esc(settings.cloudEndpoint)}) to be extracted there. It is stored for my account only.`;
+  const go = h('button', 'btn btn-play', `${ic.upload}Upload archive & detect`);
+  go.disabled = true;
+  acts.append(consent, go);
+  consent.querySelector('input')!.onchange = e => { go.disabled = !(e.target as HTMLInputElement).checked; };
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      const { upload: send, fetchExtracted } = await import('../storage/upload');
+      const r = await send([{ path: d.paths[0].split('/').pop()!, blob: d.files[0] }], { title: d.title, onProgress: p => setBar(p.total ? p.done / p.total : 1,
+        p.phase === 'hashing' ? `Hashing ${fmtBytes(p.done)} / ${fmtBytes(p.total)}` : p.phase === 'uploading' ? `Uploading ${fmtBytes(p.done)} / ${fmtBytes(p.total)}${p.dedupBytes ? ` · ${fmtBytes(p.dedupBytes)} already in the cloud` : ''}` : 'Cloud is extracting and inspecting…') });
+      if (r.platform === 'ps1') {            // PS1 runs locally: bring the extracted game files into this browser
+        const files = await fetchExtracted(r, (done, total) => setBar(done / total, `Downloading the extracted game ${fmtBytes(done)} / ${fmtBytes(total)}`));
+        const { detect } = await import('../emu/detect');
+        const g = await addEmuGame(await detect(files), (done, total) => setBar(done / total, 'Copying into this browser…'));
+        toast(`${g.title} added · PS1 game found inside the archive`);
+        location.hash = `#/game/${g.id}`;
+        return;
+      }
+      const g = await addCloudGame(r, { files: [], paths: [r.boot || d.paths[0]], size: d.size, format: `${a.kind} → ${r.format || r.platform}`, title: d.title });
+      toast(`${g.title} uploaded · ${r.platform.toUpperCase()} detected inside the archive`);
+      location.hash = `#/game/${g.id}`;
+    } catch (e) { toast((e as Error).message, 6000); go.disabled = false; }
+  };
+}
+
 // ------------------------------------------------------------------ Emulators
-const CORE_RUNTIME = { p1: 'mishrin-p1', p2: 'ps2', p3: 'ps3-cloud', p4: 'ps4' } as const;
+const CORE_RUNTIME = { p1: 'mishrin-p1', p2: 'ps2', psp: 'psp', p4: 'ps4' } as const;
 const DOT: Record<string, string> = { available: 'ok', busy: 'warn', 'mock-only': 'warn', 'test-mode': 'warn', 'not-deployed': 'off', 'no-cloud': 'off', unsupported: 'off', unavailable: 'off',
   'installation-required': 'off', 'firmware-required': 'warn', 'not-verified': 'warn', error: 'off' };
 /** Clear setup instructions when a real emulator is installed but needs user-provided firmware/BIOS (never shipped by Mishrin). */

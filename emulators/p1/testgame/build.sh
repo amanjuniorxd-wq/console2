@@ -9,7 +9,7 @@ mipsel-linux-gnu-objcopy -O binary pulse.elf pulse.raw
 python3 mkdisc.py pulse.elf pulse.raw out
 chdman createcd -f -i out/saffron-pulse.cue -o out/saffron-pulse.chd >/dev/null
 ls -l out
-# Detection fixtures (structure only — not runnable): a P2-class layout (BOOT2) and a P3-class layout (PS3_GAME).
+# Detection fixtures (structure only — not runnable): a P2-class layout (BOOT2) and a PS3 layout (PS3_GAME, used to test that PS3 is refused).
 mkdir -p fixtures
 python3 mkdisc.py pulse.elf pulse.raw fixtures --name p2-layout --cnf 'BOOT2 = cdrom0:\SLUS_000.01;1\nVER = 1.00\nVMODE = NTSC\n' >/dev/null
 python3 mkdisc.py pulse.elf pulse.raw fixtures --name p3-layout --dir PS3_GAME >/dev/null

@@ -17,12 +17,12 @@ Console (unchanged UI) ─ automatic cloud routing ─▶ Scheduler (server/brok
 ## Session profiles: Windows and emulator workers
 
 The worker runs one *profile* per session (`cloud/worker/mishrin_worker/profiles.py`): **Windows** (Wine prefix layer,
-game at `C:\Game`) or an **emulator** described by an `emulator.json` (RPCS3 for PS3-class, PCSX2 for PS2-class; the
+game at `C:\Game`) or an **emulator** described by an `emulator.json` (PCSX2 for PS2-class, PPSSPP for PSP; the
 binary is bound read-only, the template home with the operator's firmware/BIOS is the overlay's lower layer, the game is
 mounted at `~/game`). Isolation, display, audio, streaming, input, save layers, watchdog and cleanup are shared.
-A worker advertises `ps3`/`ps2` only when the emulator **and** its firmware are installed. Real RPCS3/PCSX2 have not been
-run here; the profile path is tested end-to-end with mock emulators (`cloud/test-games/emulators/`). Templates and
-installation notes: `cloud/worker/emulators/`.
+A worker advertises `ps2`/`psp` only when the emulator, its firmware (PS2 BIOS; PSP needs none) and its self-test pass.
+Real PCSX2 and PPSSPP are tested with original test software (`npm run test:real`); the profile path is also tested with
+mock emulators (`cloud/test-games/emulators/`). Profiles: `cloud/worker/emulators/`.
 
 ## Compatibility targets (controlled, all tested end-to-end)
 

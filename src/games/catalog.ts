@@ -20,7 +20,7 @@ function sanitize(g: Partial<Game>): Game | null {
     description: typeof g.description === 'string' ? g.description.slice(0, 600) : '', runtime,
     requirements: g.requirements ?? {}, launchConfig: g.launchConfig ?? {}, url, sha256: g.sha256, chunks: g.chunks,
     genre: g.genre, controller: g.controller ?? true, touch: g.touch, user: g.user,
-    emu: g.emu && ['p1', 'p2', 'p3', 'p4'].includes(g.emu.platform) && Array.isArray(g.emu.files) && typeof g.emu.primary === 'string' ? g.emu : undefined,
+    emu: g.emu && ['p1', 'p2', 'psp', 'p4'].includes(g.emu.platform) && Array.isArray(g.emu.files) && typeof g.emu.primary === 'string' ? g.emu : undefined,
   };
 }
 
@@ -121,7 +121,7 @@ export async function addEmuGame(det: import('../emu/detect').Detection, progres
   let id = `e-${slug(t)}`;
   for (let i = 2; byId(id); i++) id = `e-${slug(t)}-${i}`;
   const store = await importFiles(['games', id], det.files, progress);
-  const art = { p1: 'gen:fantasy', p2: 'gen:action', p3: 'gen:scifi', p4: 'gen:racing' }[det.platform];
+  const art = { p1: 'gen:fantasy', p2: 'gen:action', psp: 'gen:scifi', p4: 'gen:racing' }[det.platform];
   const g: Game = {
     id, title: t, artwork: art, runtime: det.platform, url: 'emu:local', user: true, controller: true, touch: true, requirements: {}, launchConfig: {},
     description: `Imported from your device${det.serial ? ` (${det.serial})` : ''}. Stored only in this browser.`,
@@ -134,12 +134,12 @@ export async function addEmuGame(det: import('../emu/detect').Detection, progres
 
 /** A console game the player uploaded to their own cloud: the library keeps only a reference (url "upload:<id>"). */
 export async function addCloudGame(r: { id: string; platform: string; title: string; serial?: string }, det: { files: File[]; paths: string[]; size: number; format?: string; title?: string }): Promise<Game> {
-  const runtime = ({ ps2: 'p2', ps3: 'p3', windows: 'x64-win' } as Record<string, RuntimeKind>)[r.platform];
+  const runtime = ({ ps2: 'p2', psp: 'psp', windows: 'x64-win' } as Record<string, RuntimeKind>)[r.platform];
   if (!runtime) throw new Error(`The cloud detected an unsupported platform (${r.platform}).`);
   const t = (r.title || det.title || 'Untitled').slice(0, 80);
   let id = `c-${slug(t)}`;
   for (let i = 2; byId(id); i++) id = `c-${slug(t)}-${i}`;
-  const platform = runtime === 'p2' ? 'p2' : 'p3';
+  const platform = runtime === 'p2' ? 'p2' : 'psp';
   const g: Game = {
     id, title: t, artwork: runtime === 'p2' ? 'gen:action' : 'gen:scifi', runtime, url: `upload:${r.id}`, user: true, controller: true, touch: true, requirements: {}, launchConfig: {},
     description: `Uploaded by you to your cloud${r.serial ? ` (${r.serial})` : ''}. Streams from a cloud worker.`,

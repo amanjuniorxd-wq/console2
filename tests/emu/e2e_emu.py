@@ -78,30 +78,33 @@ async def main():
         await page.wait_for_selector('.emu-card')
         cards = await page.evaluate("[...document.querySelectorAll('.emu-card')].map(c => ({name: c.querySelector('.emu-name').textContent, status: c.querySelector('.badge').textContent, disabled: [...c.querySelectorAll('button')].filter(b => b.disabled).map(b => b.textContent)}))")
         st = {c['name']: c for c in cards}
-        check('Emulators page: P1 Ready, P2 In development, P3 In development, P4 Research (no fake launch buttons)',
-              st['Mishrin P1']['status'] == 'Ready' and st['Mishrin P2']['status'] == 'In development' and st['Mishrin P3']['status'] == 'In development' and st['Mishrin P4']['status'] == 'Research'
-              and all(st[f'Mishrin P{i}']['disabled'] for i in (2, 3, 4)), json.dumps({k: (v['status'], v['disabled']) for k, v in st.items()}))
+        check('Emulators page: P1 Ready, P2 In development, PSP Ready (cloud), P4 Research, no PS3 (no fake launch buttons)',
+              st['Mishrin P1']['status'] == 'Ready' and st['Mishrin P2']['status'] == 'In development' and st['Mishrin PSP']['status'] == 'Ready' and st['Mishrin P4']['status'] == 'Research'
+              and 'Mishrin P3' not in st and all(st[k]['disabled'] for k in ('Mishrin P2', 'Mishrin PSP', 'Mishrin P4')), json.dumps({k: (v['status'], v['disabled']) for k, v in st.items()}))
         await page.wait_for_selector('.rt-row')
         rows = await page.evaluate("[...document.querySelectorAll('.rt-row')].map(r => [r.dataset.rt, r.dataset.state, r.querySelector('.rt-live').textContent])")
         rs = {r[0]: r for r in rows}
-        check('Runtime status (no cloud): Browser + P1 ready locally; Windows/PS2/PS3 need a cloud — derived, not hardcoded',
-              rs['browser'][1] == 'available' and rs['mishrin-p1'][1] == 'available' and all(rs[k][1] == 'no-cloud' for k in ('windows-cloud', 'ps2', 'ps3-cloud')), rows)
+        check('Runtime status (no cloud): Browser + P1 ready locally; Windows/PS2/PSP need a cloud; no PS3 row — derived, not hardcoded',
+              rs['browser'][1] == 'available' and rs['mishrin-p1'][1] == 'available' and all(rs[k][1] == 'no-cloud' for k in ('windows-cloud', 'ps2', 'psp')) and 'ps3-cloud' not in rs, rows)
         legal = await page.text_content('.legal')
         check('legal notice: user-owned games/BIOS only, nothing uploaded without explicit consent', 'legally entitled' in legal and 'never uploaded unless you explicitly choose' in legal)
         await page.screenshot(path=f'{SHOTS}/emu-emulators.png')
 
         # ---------- Upload Game: detection of each format ----------
         for label, files, expect in (('CUE+BIN', ['out/saffron-pulse.cue', 'out/saffron-pulse.bin'], 'Mishrin P1'), ('CHD', ['out/saffron-pulse.chd'], 'Mishrin P1'),
-                                     ('ISO', ['out/saffron-pulse.iso'], 'Mishrin P1'), ('P2 DVD layout', ['fixtures/p2-layout.iso'], 'Mishrin P2'), ('P3 layout', ['fixtures/p3-layout.iso'], 'Mishrin P3 Cloud')):
+                                     ('ISO', ['out/saffron-pulse.iso'], 'Mishrin P1'), ('P2 DVD layout', ['fixtures/p2-layout.iso'], 'Mishrin P2'),
+                                     ('PSP ISO', ['../../psp/testapp/fixtures/mishrin-psp-test.iso'], 'Mishrin PSP'), ('PSP CSO', ['../../psp/testapp/fixtures/mishrin-psp-test.cso'], 'Mishrin PSP'),
+                                     ('PS3 layout (unsupported)', ['fixtures/p3-layout.iso'], 'error')):
             await boot('#/upload')
             await page.set_input_files('.dropzone input[type=file]', [os.path.join(T, f) for f in files])
             await page.wait_for_selector('.emu-card, .detect .err', timeout=10000)
             name = await page.text_content('.emu-card .emu-name') if await page.locator('.emu-card').count() else 'error'
             btn = page.locator('.emu-card .actions button').first
             txt, dis = (await btn.text_content(), await btn.is_disabled()) if await btn.count() else ('', True)
-            ok = name == expect and ((expect == 'Mishrin P1' and 'Add to Library' in txt and not dis) or (expect != 'Mishrin P1' and dis))
+            err = await page.text_content('.detect .err') if name == 'error' else ''
+            ok = name == expect and ((expect == 'Mishrin P1' and 'Add to Library' in txt and not dis) or (expect == 'error' and 'PS3 games are not supported' in err) or (expect not in ('Mishrin P1', 'error') and dis))
             check(f'Upload Game detects {label} → {expect}', ok, f'{name}: "{txt.strip()}"{" (disabled)" if dis else ""}')
-        await page.screenshot(path=f'{SHOTS}/emu-upload-p3.png')
+        await page.screenshot(path=f'{SHOTS}/emu-upload-ps3-refused.png')
 
         # ---------- import (local copy, streamed) ----------
         await boot('#/upload')

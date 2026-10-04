@@ -1,0 +1,10 @@
+{
+ "name": "ppsspp", "runtime": "psp", "version": "1.20.4 (source build)",
+ "binary": "/usr/local/lib/mishrin-ppsspp/PPSSPPSDL",
+ "argv": ["{binary}", "--fullscreen", "--pause-menu-exit", "{boot}"],
+ "formats": ["iso", "cso", "pbp"],
+ "env": { "SDL_VIDEODRIVER": "x11" },
+ "saves": [".config/ppsspp/PSP/SAVEDATA"],
+ "exclude": ["*/SYSTEM/CACHE/*", "*/PPSSPP_STATE/*", "*.ini.bak"],
+ "selfTest": { "argv": ["{binary}", "--fullscreen", "/opt/emu/selftest/mishrin-psp-test.iso"], "title": "Mishrin PSP Test", "seconds": 60 }
+}

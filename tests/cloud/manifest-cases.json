@@ -988,22 +988,22 @@
   "valid": false
  },
  {
-  "name": "emulator: PS3 folder",
+  "name": "emulator: PSP folder (EBOOT.PBP)",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1054,20 +1054,20 @@
  {
   "name": "emulator: client-chosen binary",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1081,20 +1081,20 @@
  {
   "name": "emulator: wrong emulator for platform",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1108,20 +1108,20 @@
  {
   "name": "emulator: boot not in files",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "X/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "X/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1134,20 +1134,20 @@
  {
   "name": "emulator: boot not a boot file",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/PARAM.SFO",
+   "platform": "psp",
+   "boot": "Game/GAME.DAT",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1160,20 +1160,20 @@
  {
   "name": "emulator: args",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1189,20 +1189,20 @@
  {
   "name": "emulator: network",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1242,20 +1242,20 @@
  {
   "name": "emulator: traversal in boot",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "../EBOOT.BIN",
+   "platform": "psp",
+   "boot": "../EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1268,20 +1268,20 @@
  {
   "name": "emulator: controller map arbitrary key",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1297,20 +1297,20 @@
  {
   "name": "emulator: controller map unknown button",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1326,20 +1326,20 @@
  {
   "name": "emulator: controller map ok",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1355,20 +1355,20 @@
  {
   "name": "emulator: absurd RAM",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "emulator",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1384,20 +1384,20 @@
  {
   "name": "type: unknown",
   "manifest": {
-   "id": "emu-ps3",
+   "id": "emu-psp",
    "type": "shell",
-   "platform": "ps3",
-   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "platform": "psp",
+   "boot": "Game/EBOOT.PBP",
    "files": [
     {
-     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "path": "Game/EBOOT.PBP",
      "size": 4,
      "chunks": [
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
      ]
     },
     {
-     "path": "Game/PS3_GAME/PARAM.SFO",
+     "path": "Game/GAME.DAT",
      "size": 4,
      "chunks": [
       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1406,5 +1406,43 @@
    ]
   },
   "valid": false
+ },
+ {
+  "name": "emulator: PS3 platform removed",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "G/EBOOT.BIN",
+   "files": [
+    {
+     "path": "G/EBOOT.BIN",
+     "size": 1,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: PSP CSO",
+  "manifest": {
+   "id": "emu-psp-cso",
+   "type": "emulator",
+   "platform": "psp",
+   "boot": "g.cso",
+   "files": [
+    {
+     "path": "g.cso",
+     "size": 1,
+     "chunks": [
+      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+     ]
+    }
+   ]
+  },
+  "valid": true
  }
 ]

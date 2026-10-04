@@ -137,6 +137,8 @@ a.btn-play { color: #140800; }
 #player { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #000; display: grid; place-items: center; }
 .surface { position: absolute; inset: 0; display: grid; place-items: center; }
 .game-surface { width: 100%; height: 100%; border: 0; display: block; background: #000; object-fit: contain; }
+/* Stretch to the device: a compositor scale of the same frame (no extra rendering, no internal upscaling). */
+.game-surface.stretch { object-fit: fill; }
 .pixelated { image-rendering: pixelated; }
 .game-frame { position: absolute; top: 0; left: 0; }
 .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px; background: radial-gradient(circle at 50% 45%, rgba(255, 138, 0, .12), transparent 45%), #000; }

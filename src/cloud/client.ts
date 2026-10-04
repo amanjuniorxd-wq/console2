@@ -10,7 +10,7 @@ import { saveKey, idHeaders } from './identity';
 import { FB, LOGICAL_FROM_FULL } from '../input/pad';
 
 /** Console runtime kind → worker runtime on the wire (emulator platforms use their cloud runtime ids). */
-export const WIRE_RUNTIME: Record<string, string> = { p2: 'ps2', p3: 'ps3' };
+export const WIRE_RUNTIME: Record<string, string> = { p2: 'ps2', psp: 'psp' };
 
 export interface Quality { height: number; fps: number; kbps: number }
 

@@ -27,7 +27,7 @@ export function score(w, need) {
 
 /** Detected capabilities a runtime needs on the worker (flags come from real detection in the worker; see capabilities()).
  *  A worker running a declared mock emulator (test double) is accepted for that runtime only via flags.mockRuntimes. */
-export const RUNTIME_NEEDS = { ps2: ['pcsx2'], ps3: ['rpcs3', 'graphics'] };
+export const RUNTIME_NEEDS = { ps2: ['pcsx2'], psp: ['ppsspp'] };
 export function capable(w, rt) {
   const f = w.caps?.flags, needs = RUNTIME_NEEDS[rt];
   if (!needs || !f || w.kind !== 'worker') return true;            // Windows/x86 or legacy nodes: the runtime list is authoritative

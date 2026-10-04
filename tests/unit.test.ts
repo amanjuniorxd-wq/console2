@@ -58,13 +58,16 @@ ok('adapt: floor 1 Mbps', adapt({ ...q, kbps: 1100 }, max, 0.5, 300).kbps >= 100
   const { RUNTIMES, liveStatus, descriptorFor, byRuntimeId } = await import('../src/runtimes/registry');
   const rep = (rt: Record<string, Partial<import('../src/runtimes/registry').CloudRuntimeReport>>) => ({ sessions: 0, auth: { required: false }, runtimes: Object.fromEntries(Object.entries(rt).map(([k, v]) => [k, { runtime: k, workers: 1, capacity: 2, active: 0, free: 2, queued: 0, mock: false, emulators: [], ...v }])) }) as never;
   const C = { wasm: true, webgpu: false };
-  ok('registry: every Game runtime kind maps to exactly one runtime', ['wasm', 'web', 'webgpu', 'x64-win', 'x86', 'p1', 'p2', 'p3', 'p4'].every(k => RUNTIMES.filter(r => r.serves.includes(k as never)).length === 1));
-  ok('registry: PS2/PS3 never READY (real emulators, firmware/BIOS required), P1/Windows/Browser ready', byRuntimeId('ps2').maturity === 'in-development' && byRuntimeId('ps3-cloud').maturity === 'in-development' && ['browser', 'mishrin-p1', 'windows-cloud'].every(id => byRuntimeId(id as never).maturity === 'ready'));
-  const p3 = byRuntimeId('ps3-cloud'), win = byRuntimeId('windows-cloud');
-  ok('live: no cloud configured → no-cloud', liveStatus(p3, C, null, false).state === 'no-cloud');
-  ok('live: cloud without PS3 workers → not deployed', liveStatus(p3, C, rep({ 'x64-win': {} }), true).state === 'not-deployed');
-  ok('live: only mock PS3 workers → mock-only (never available)', (s => s.state === 'mock-only' && !s.ok)(liveStatus(p3, C, rep({ ps3: { mock: true, emulators: [{ name: 'rpcs3', version: 'mock', firmware: true, mock: true }] } }), true)));
-  ok('live: real PS3 worker without self-test report → "In development · deployed" (not "Ready")', (s => s.ok && s.label.startsWith('In development') && s.label !== 'Ready')(liveStatus(p3, C, rep({ ps3: { emulators: [{ name: 'rpcs3', version: '0.0.36', firmware: true, mock: false }] } }), true)));
+  ok('registry: every Game runtime kind maps to exactly one runtime', ['wasm', 'web', 'webgpu', 'x64-win', 'x86', 'p1', 'p2', 'psp', 'p4'].every(k => RUNTIMES.filter(r => r.serves.includes(k as never)).length === 1));
+  ok('registry: PS3 removed (no runtime, no platform)', !RUNTIMES.some(r => (r.id as string) === 'ps3-cloud' || (r.platform as string) === 'ps3' || r.serves.includes('p3' as never)));
+  ok('registry: PS2 never READY (BIOS required); PSP/P1/Windows/Browser ready', byRuntimeId('ps2').maturity === 'in-development' && ['psp', 'browser', 'mishrin-p1', 'windows-cloud'].every(id => byRuntimeId(id as never).maturity === 'ready'));
+  const psp = byRuntimeId('psp'), win = byRuntimeId('windows-cloud');
+  const PE = (o: object) => ({ name: 'ppsspp', version: '1.20.4', firmware: true, mock: false, worker: 'w1', advertised: true, ...o });
+  ok('live: no cloud configured → no-cloud', liveStatus(psp, C, null, false).state === 'no-cloud');
+  ok('live: cloud without PSP workers → not deployed', liveStatus(psp, C, rep({ 'x64-win': {} }), true).state === 'not-deployed');
+  ok('live: only mock PSP workers → mock-only (never available)', (s => s.state === 'mock-only' && !s.ok)(liveStatus(psp, C, rep({ psp: { mock: true, emulators: [{ name: 'ppsspp', version: 'mock', firmware: true, mock: true }] } }), true)));
+  ok('live: PPSSPP worker not yet self-tested → not-verified (not "Ready")', (s => s.state === 'not-verified' && s.label !== 'Ready')(liveStatus(psp, C, rep({ psp: { emulators: [PE({ status: 'NOT_VERIFIED' })] } }), true)));
+  ok('live: PPSSPP worker passed its self-test → Ready (from worker state, no firmware needed)', liveStatus(psp, C, rep({ psp: { emulators: [PE({ status: 'READY', verified: { ok: true, firstFrameMs: 700, detail: '' } })] } }), true).label === 'Ready');
   const E = (o: object) => ({ name: 'pcsx2', version: '1.6.0', firmware: false, mock: false, firmwareLabel: 'PS2 BIOS', requires: 'A PS2 BIOS dumped from your own console.', worker: 'w1', ...o });
   const p2 = byRuntimeId('ps2');
   ok('live: PCSX2 installed, no BIOS → firmware-required with exact setup text (not deployed, not Ready)', (s => s.state === 'firmware-required' && !s.ok && /PS2 BIOS required/.test(s.label) && /own console/.test(s.requires || ''))(liveStatus(p2, C, rep({ ps2: { workers: 0, capacity: 0, free: 0, emulators: [E({ status: 'BIOS_REQUIRED', advertised: false })] } }), true)));
@@ -75,9 +78,9 @@ ok('adapt: floor 1 Mbps', adapt({ ...q, kbps: 1100 }, max, 0.5, 300).kbps >= 100
   ok('live: Windows workers all busy → busy + queue hint', (s => s.state === 'busy' && /queued/.test(s.detail))(liveStatus(win, C, rep({ 'x64-win': { free: 0, active: 2, queued: 1 } }), true)));
   ok('live: Windows with a free slot → Ready', liveStatus(win, C, rep({ 'x64-win': {} }), true).label === 'Ready');
   ok('live: P1 needs WebAssembly and its core', liveStatus(byRuntimeId('mishrin-p1'), { wasm: false, webgpu: false }, null, false).ok === false && liveStatus(byRuntimeId('mishrin-p1'), C, null, false, false).label === 'Core missing');
-  ok('descriptorFor maps games', descriptorFor({ runtime: 'p3' })?.id === 'ps3-cloud' && descriptorFor({ runtime: 'x86' })?.id === 'windows-cloud');
-  ok('resolver: PS3 title uploaded to the cloud → cloud route', routes(plan(G({ runtime: 'p3', url: 'upload:' + 'a'.repeat(32) }), caps(), S({ cloudEndpoint: 'https://c' }))) === 'cloud');
-  ok('resolver: PS3 title not uploaded → explains upload, no route', (p => !p.routes.length && /Upload/.test(p.blocked!.message))(plan(G({ runtime: 'p3', url: 'emu:local' }), caps(), S({ cloudEndpoint: 'https://c' }))));
+  ok('descriptorFor maps games', descriptorFor({ runtime: 'psp' })?.id === 'psp' && descriptorFor({ runtime: 'x86' })?.id === 'windows-cloud');
+  ok('resolver: PSP title uploaded to the cloud → cloud route', routes(plan(G({ runtime: 'psp', url: 'upload:' + 'a'.repeat(32) }), caps(), S({ cloudEndpoint: 'https://c' }))) === 'cloud');
+  ok('resolver: PSP title not uploaded → explains upload, no route', (p => !p.routes.length && /Upload/.test(p.blocked!.message))(plan(G({ runtime: 'psp', url: 'emu:local' }), caps(), S({ cloudEndpoint: 'https://c' }))));
   ok('resolver: PS2 uploaded but no cloud endpoint → needs-cloud', plan(G({ runtime: 'p2', url: 'upload:' + 'b'.repeat(32) }), caps(), S()).blocked?.code === 'needs-cloud');
   ok('resolver: PS4 → research, unsupported', plan(G({ runtime: 'p4', url: 'emu:local' }), caps(), S({ cloudEndpoint: 'https://c' })).blocked?.code === 'unsupported');
   ok('resolver: P1 stays local even with a cloud', routes(plan(G({ runtime: 'p1', url: 'emu:local' }), caps(), S({ cloudEndpoint: 'https://c' }))) === 'local-emu');
@@ -109,6 +112,33 @@ ok('adapt: floor 1 Mbps', adapt({ ...q, kbps: 1100 }, max, 0.5, 300).kbps >= 100
   // header (keyTab 36, dataTab 44, 1 entry) · entry (key 0, utf8, len 6, max 8, off 0) · "TITLE\0\0\0" · "Orbit\0\0\0"
   const sfo = new Uint8Array([0, 0x50, 0x53, 0x46, 1, 1, 0, 0, 36, 0, 0, 0, 44, 0, 0, 0, 1, 0, 0, 0, 0, 0, 4, 2, 6, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 84, 73, 84, 76, 69, 0, 0, 0, 79, 114, 98, 105, 116, 0, 0, 0]);
   ok('detect: PARAM.SFO parser in the browser detector', parseSfo(sfo)?.TITLE === 'Orbit');
+
+  // ---- archives in the browser: magic bytes + header listing only (nothing extracted), one file for the upload
+  const { detectAny } = await import('../src/runtimes/detect');
+  const { listArchive, archiveKind, likelyPlatform } = await import('../src/runtimes/archive');
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const dir = mkdtempSync('/tmp/mishrin-arc-unit-');
+  execFileSync('python3', ['tests/cloud/make_archives.py', dir]);
+  const af = (n: string, as = n) => new File([readFileSync(`${dir}/${n}`)], as);
+  const zl = await listArchive(af('psp-folder.zip'));
+  ok('ZIP: central directory listed (names + sizes), likely PSP', zl?.kind === 'zip' && zl.entries.some(e => e.name === 'Archive Test/EBOOT.PBP') && /PSP/.test(likelyPlatform(zl.entries)), JSON.stringify(zl));
+  const r5 = await listArchive(af('ps2.rar')), r4 = await listArchive(af('ps1.rar'));
+  ok('RAR 5 and RAR 4: file headers walked without decompressing', r5?.kind === 'rar' && r5.entries.map(e => e.name).join() === 'Game/disc.iso,Game/readme.txt' && r5.entries[0].size === 65536
+    && r4?.kind === 'rar' && r4.entries[0]?.name === 'disc/game.iso' && r4.entries[0].size === 65536, JSON.stringify([r5, r4]));
+  const named = await detectAny([af('ps2.rar', 'innocent-name.dat')]);
+  ok('archive recognised by magic bytes, not by name; one file, kind archive', named.ok && named.kind === 'archive' && named.format === 'rar' && named.files.length === 1 && !named.runtime, JSON.stringify({ k: named.kind, f: named.format, e: named.error }));
+  ok('archive kinds from header bytes (zip / rar5 / rar4 / 7z / none)', archiveKind(new Uint8Array([0x50, 0x4b, 3, 4])) === 'zip' && archiveKind(new TextEncoder().encode('Rar!\x1a\x07\x01\x00')) === 'rar'
+    && archiveKind(new TextEncoder().encode('Rar!\x1a\x07\x00')) === 'rar' && archiveKind(new Uint8Array([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])) === '7z' && archiveKind(new Uint8Array([0x4d, 0x5a, 0, 0])) === null);
+  // folder selection with many files: only console candidates are examined ("Too many files selected" fixed at the source)
+  const iso = readFileSync('emulators/psp/testapp/fixtures/mishrin-psp-test.iso');
+  const many = [...Array.from({ length: 300 }, (_, i) => new File(['x'], `asset-${i}.png`)), new File([iso], 'game.iso')];
+  many.forEach((f, i) => Object.defineProperty(f, 'webkitRelativePath', { value: `Folder/${i === 300 ? 'game.iso' : f.name}` }));
+  const big = await detectAny(many);
+  ok('folder with 301 files → the game image inside is found (no "Too many files")', big.ok && big.platform === 'psp' && big.files.length === 1 && big.paths[0] === 'Folder/game.iso', big.error);
+  const pbpFolder = ['EBOOT.PBP', 'GAME.DAT'].map(n => Object.defineProperty(new File([readFileSync(`emulators/psp/testapp/fixtures/MSHRPSP/${n}`)], n), 'webkitRelativePath', { value: `MSHRPSP/${n}` }));
+  const pf = await detectAny(pbpFolder);
+  ok('PSP homebrew folder (EBOOT.PBP) → PSP runtime, whole folder kept for upload', pf.ok && pf.runtime === 'psp' && pf.kind === 'psp-folder' && pf.files.length === 2, pf.error);
 }
 console.log(`\n${n - fails}/${n} unit checks passed`);
 if (fails) process.exit(1);

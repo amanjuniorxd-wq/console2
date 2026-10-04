@@ -36,13 +36,13 @@ Console ⇄ **broker** (HTTP/JSON, CORS) ⇄ **node** (long-poll). Media goes no
 | `GET /api/runtimes` | live capability report per worker runtime: `{ runtimes: { [rt]: { workers, capacity, active, held, free, queued, gpuWorkers, hardwareGpu, emulators:[{name,version,firmware,mock}], mock } }, sessions, auth }` |
 | `POST /api/uploads` `{ files:[{path,size,chunks[]}], title }` → `{ id, missing[], chunkSize }` | chunked upload, 4 MiB chunks, SHA-256 each. Re-declaring resumes (only missing chunks are listed). Chunks already stored anywhere are not re-sent. |
 | `PUT /api/uploads/:id/chunks/:sha` | raw chunk; must belong to the upload and match its hash |
-| `POST /api/uploads/:id/complete` → `{ id, platform, runtime, title, serial }` | the scheduler checks chunk sizes and inspects the bytes (PE header, PARAM.SFO + EBOOT, ISO 9660 SYSTEM.CNF, CHD metadata). `422` PS1-class (runs locally), `415` unsupported. Then play with `game: { runtime, upload: id }`. Uploads are owner-scoped. Requirements of uploaded console titles use platform defaults, overridable by the operator: `UPLOAD_DEFAULTS='{"ps3":{"ram":4096}}'`. |
+| `POST /api/uploads/:id/complete` → `{ id, platform, runtime, title, serial, boot, format }` | the scheduler checks chunk sizes and inspects the bytes (PE header, EBOOT.PBP PARAM.SFO, CSO, ISO 9660 SYSTEM.CNF / UMD_DATA.BIN / PSP_GAME, CHD metadata). A single ZIP/RAR/7z file (magic bytes) is extracted server-side with 7-Zip first (no absolute or `..` paths, no links, no encryption, entry/size/ratio limits, nested archives to depth 2; cached by content) and its contents are inspected. `422` PS1-class (runs locally; for an archive the response lists `files` instead, fetched with `GET /api/uploads/:id/files/:i`), `422` PS3 (not supported), `415` unsupported, `429` too many pending uploads. Then play with `game: { runtime, upload: id }`. Uploads are owner-scoped. Requirements of uploaded console titles use platform defaults, overridable by the operator: `UPLOAD_DEFAULTS='{"psp":{"ram":1024}}'`. |
 | `GET /api/saves` · `GET /api/saves/:game/data[?ref=]` · `POST /api/saves/:game/import` · `DELETE /api/saves/:game` | cloud save layers of the calling player (device token or `x-save-key`). Import accepts zstd/gzip save layers only. |
 | `POST /api/auth/device` `{deviceId?}` (+ `Bearer <client key>` when `CLIENT_KEYS` is set) → `{ token, deviceId, expires }` | HMAC device token; send as `x-device-token`. With `AUTH_REQUIRED=1`, sessions, uploads, package PUTs and saves require it. |
 | `GET /v1/packages/:sha` | **workers only** (worker token). Chunks may belong to other players. |
 
-Worker runtimes on the wire: `x64-win`, `x86` (Wine), `ps2` (PCSX2 profile), `ps3` (RPCS3 profile), `wasm` (legacy node).
-The console maps its kinds `p2 → ps2`, `p3 → ps3`.
+Worker runtimes on the wire: `x64-win`, `x86` (Wine), `ps2` (PCSX2 profile), `psp` (PPSSPP profile), `wasm` (legacy node).
+The console maps its kinds `p2 → ps2`, `psp → psp`.
 
 ICE is non-trickle: both sides finish gathering before sending SDP (one round-trip, simpler NAT story; use TURN in `ICE_SERVERS` for restrictive networks).
 
@@ -77,17 +77,17 @@ ICE is non-trickle: both sides finish gathering before sending SDP (one round-tr
 Score: cached game layer +50, hardware GPU (GPU titles) +30, hardware encoder +15, minus load and occupancy.
 A start failure is retried once on another worker.
 
-## Emulator game manifest (PS2/PS3-class; same validators)
+## Emulator game manifest (PS2-class / PSP; same validators)
 
 ```json
-{ "id": "my-ps3-title", "title": "…", "type": "emulator", "platform": "ps3", "emulator": "rpcs3",
-  "boot": "GAME/PS3_GAME/USRDIR/EBOOT.BIN", "files": [ … ], "network": false,
-  "requirements": { "ram": 8192, "gpu": true, "cpus": 4 }, "display": { "width": 1280, "height": 720 },
+{ "id": "my-psp-title", "title": "…", "type": "emulator", "platform": "psp", "emulator": "ppsspp",
+  "boot": "GAME/EBOOT.PBP", "files": [ … ], "network": false,
+  "requirements": { "ram": 1536, "cpus": 2 }, "display": { "width": 480, "height": 272 },
   "controllerMap": { "cross": "x", "circle": "c", … } }
 ```
 
-`emulator` is fixed per platform (`ps2 → pcsx2`, `ps3 → rpcs3`); clients never choose a binary. `boot` must be a file of
-the game (`EBOOT.BIN` or `.iso` for ps3; `.iso/.chd/.cue` for ps2). No arguments. The worker builds the command line
+`emulator` is fixed per platform (`ps2 → pcsx2`, `psp → ppsspp`); clients never choose a binary. `boot` must be a file of
+the game (`.iso`, `.cso` or `EBOOT.PBP` for psp; `.iso/.chd/.cue` for ps2). No arguments. The worker builds the command line
 from its own `emulator.json` profile (`{binary}` + fixed flags + `{boot}`), see `cloud/worker/mishrin_worker/profiles.py`.
 
 ## Windows game manifest (validated by the scheduler *and* the worker)

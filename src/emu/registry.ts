@@ -16,11 +16,11 @@ export const CORES: Record<Platform, CoreDescriptor> = {
     summary: 'PlayStation-2-class consoles. In development: cloud worker profile (PCSX2) built and tested with a mock emulator; no local core.',
     reason: 'Local: not in this build (Play! WebAssembly needs Emscripten 4, WASM threads + cross-origin isolation). Cloud: real PCSX2 1.6 on a worker (verified with the Mishrin test ROM + test disc); games need your own PS2 BIOS on the worker. See docs/universal-runtime-architecture.md.',
   },
-  p3: {
-    id: 'p3', name: 'Mishrin P3', status: 'research', available: false,
-    formats: ['Disc folder / ISO', 'PKG'],
-    summary: 'PlayStation-3-class consoles. Cloud only: real RPCS3 on a worker; games need your own PS3 system software there.',
-    reason: 'A browser cannot run Cell PPU/SPU code at speed. The cloud path runs real RPCS3 on a worker (verified with the Mishrin test program: video, audio, controller, saves); commercial games need PS3 system software from your own console, installed by the operator.',
+  psp: {
+    id: 'psp', name: 'Mishrin PSP', status: 'experimental', available: false,
+    formats: ['ISO (UMD)', 'CSO', 'EBOOT.PBP', 'Game folder (EBOOT.PBP)'],
+    summary: 'PSP games. Cloud: real PPSSPP on a worker, streamed to this browser. No firmware needed (PPSSPP emulates the system software).',
+    reason: 'Local: no PSP WebAssembly core in this build. Cloud: PPSSPP 1.20.4 on a worker (verified with the Mishrin PSP test program: video, audio, controller, saves).',
   },
   p4: {
     id: 'p4', name: 'Mishrin P4', status: 'research', available: false,

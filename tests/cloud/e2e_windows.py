@@ -7,6 +7,7 @@ real console UI in Chromium: Library → Windows game → Play → cloud → con
 reassignment → Exit, plus 32-bit/D3D9/GDI targets, upload path, adaptive quality, timeouts and cleanup.
 """
 import asyncio
+import io
 import base64
 import json
 import os
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from PIL import Image
 
 from playwright.async_api import async_playwright
 
@@ -28,7 +30,7 @@ WT, AT = 'e2e-worker-token', 'e2e-admin-token'
 TMP = '/tmp/mishrin-e2e'
 SHOTS = os.path.join(ROOT, 'tests', 'shots')
 WORKERS = {'e2e-a': ('/var/lib/mishrin', 100), 'e2e-b': ('/var/lib/mishrin-b', 200)}
-EMULATORS = os.path.join(ROOT, 'cloud', 'test-games', 'emulators')   # MOCK RPCS3 / PCSX2 profiles (test doubles)
+EMULATORS = os.path.join(ROOT, 'cloud', 'test-games', 'emulators')   # MOCK PPSSPP / PCSX2 profiles (test doubles)
 results = []
 procs = {}
 
@@ -122,8 +124,8 @@ async def main():
         shutil.rmtree(f'{TMP}/{d}', ignore_errors=True)
     env = dict(os.environ, PORT=str(PORT), WORKER_TOKEN=WT, ADMIN_TOKEN=AT, CAS_DIR=f'{TMP}/cas', GAMES_DIR=f'{TMP}/games', DATA_DIR=f'{TMP}/data',
                WORKER_TIMEOUT_MS='6000', CLIENT_HEARTBEAT_TIMEOUT_MS='35000', ORPHAN_GRACE_MS='90000',
-               # operator defaults for uploaded console titles: the mock emulator needs little (8 GB VM; real RPCS3 needs more)
-               UPLOAD_DEFAULTS=json.dumps({'ps3': {'ram': 1024, 'cpus': 1, 'storageMB': 2048}, 'ps2': {'ram': 1024, 'cpus': 1, 'storageMB': 2048}}))
+               # operator defaults for uploaded console titles: the mock emulator needs little (8 GB VM)
+               UPLOAD_DEFAULTS=json.dumps({'psp': {'ram': 1024, 'cpus': 1, 'storageMB': 2048}, 'ps2': {'ram': 1024, 'cpus': 1, 'storageMB': 2048}}))
     procs['sched'] = subprocess.Popen(['node', 'server/broker.mjs'], cwd=ROOT, env=env, stdout=open(f'{TMP}/sched.log', 'w'), stderr=subprocess.STDOUT)
     wait_for(lambda: api('GET', '/v1/config')[0] == 200, 10)
 
@@ -419,7 +421,7 @@ async def main():
         await page.click('#player [data-p=exit]')
         wait_for(lambda: no_leftovers(sid3), 30)
 
-        # ================= 12. PS3-class cloud runtime through the real worker with a MOCK RPCS3 =================
+        # ================= 12. PSP cloud runtime through the real worker with a MOCK PPSSPP =================
         # Everything except the emulator is real: upload (chunked, server-side inspection), scheduling, sandbox,
         # overlays, Xorg, stream, full-pad input, cloud save layer, restore on the next session.
         def make_sfo(entries):
@@ -431,47 +433,69 @@ async def main():
             kt += b'\0' * (-len(kt) % 4)
             hdr = b'\0PSF' + (0x101).to_bytes(4, 'little') + (20 + len(idx)).to_bytes(4, 'little') + (20 + len(idx) + len(kt)).to_bytes(4, 'little') + len(keys).to_bytes(4, 'little')
             return hdr + idx + kt + dt
-        game_dir = f'{TMP}/ps3/SAFFRON_ORBIT'
-        shutil.rmtree(f'{TMP}/ps3', ignore_errors=True)
-        os.makedirs(f'{game_dir}/PS3_GAME/USRDIR')
-        open(f'{game_dir}/PS3_GAME/PARAM.SFO', 'wb').write(make_sfo({'TITLE': 'Saffron Orbit', 'TITLE_ID': 'MSHR00001', 'CATEGORY': 'HG'}))
-        open(f'{game_dir}/PS3_GAME/USRDIR/EBOOT.BIN', 'wb').write(b'\x7fELF' + bytes(4092))   # original test stub, not a game
+        game_dir = f'{TMP}/psp/SAFFRON_ORBIT'
+        shutil.rmtree(f'{TMP}/psp', ignore_errors=True)
+        os.makedirs(game_dir)
+        sfo_b = make_sfo({'TITLE': 'Saffron Orbit', 'DISC_ID': 'MSHR00001', 'CATEGORY': 'MG'})
+        elf = b'\x7fELF' + bytes(4092)   # original test stub, not a game
+        hdr = b'\0PBP' + (0x10000).to_bytes(4, 'little') + (40).to_bytes(4, 'little') + b''.join((40 + len(sfo_b)).to_bytes(4, 'little') for _ in range(6)) + (40 + len(sfo_b) + len(elf)).to_bytes(4, 'little')
+        open(f'{game_dir}/EBOOT.PBP', 'wb').write(hdr + sfo_b + elf)
+        open(f'{game_dir}/GAME.DAT', 'wb').write(b'MSHRGAME\xff\x99\x33\0')
         await boot('#/emulators')
-        await page.wait_for_selector('.rt-row[data-rt="ps3-cloud"]')
-        await page.wait_for_function("document.querySelector('.rt-row[data-rt=\"ps3-cloud\"]')?.dataset.state === 'mock-only'", timeout=20000)
+        await page.wait_for_selector('.rt-row[data-rt="psp"]')
+        await page.wait_for_function("document.querySelector('.rt-row[data-rt=\"psp\"]')?.dataset.state === 'mock-only'", timeout=20000)
         rows = await page.evaluate("[...document.querySelectorAll('.rt-row')].map(r => [r.dataset.rt, r.dataset.state, r.querySelector('.rt-live').textContent])")
         rs = {r[0]: r for r in rows}
-        check('runtime status from live workers: Windows Ready, PS3/PS2 "Mock worker" (never Ready)', rs['windows-cloud'][1] == 'available' and rs['ps3-cloud'][1] == 'mock-only' and rs['ps2'][1] == 'mock-only', rows)
+        check('runtime status from live workers: Windows Ready, PSP/PS2 "Mock worker" (never Ready)', rs['windows-cloud'][1] == 'available' and rs['psp'][1] == 'mock-only' and rs['ps2'][1] == 'mock-only', rows)
         await boot('#/upload')
         await page.set_input_files('input[data-dir]', game_dir)
-        await page.wait_for_selector('.emu-card[data-runtime="ps3-cloud"]', timeout=15000)
+        await page.wait_for_selector('.emu-card[data-runtime="psp"]', timeout=15000)
         card_txt = await page.text_content('.emu-card')
         go = page.locator('.emu-card .btn-play')
         disabled_before = await go.is_disabled()
-        check('PS3 game folder detected in the browser (PARAM.SFO) + upload needs explicit consent', 'MSHR00001' in card_txt and 'Saffron Orbit' in card_txt and disabled_before and 'mock' in card_txt.lower(), card_txt[:160])
+        check('PSP game folder detected in the browser (EBOOT.PBP PARAM.SFO) + upload needs explicit consent', 'MSHR00001' in card_txt and 'Saffron Orbit' in card_txt and disabled_before and 'mock' in card_txt.lower(), card_txt[:160])
         await page.check('[data-consent]')
         await go.click()
         await page.wait_for_url('**/#/game/c-saffron-orbit', timeout=60000)
         badges = ' | '.join(await page.locator('.badges .badge').all_text_contents())
-        check('uploaded PS3 title in the universal library (runtime · platform · cloud · maturity)', 'Mishrin P3 Cloud · PS3-class' in badges and 'Cloud · uploaded by you' in badges and 'In development' in badges, badges)
+        check('uploaded PSP title in the universal library (runtime · platform · cloud · maturity)', 'Mishrin PSP · PSP' in badges and 'Cloud · uploaded by you' in badges and 'Ready' in badges, badges)
         sessions_seen.clear()
-        t_p3 = time.time()
+        t_psp = time.time()
         await page.click('button.btn-play')
         await page.wait_for_selector('#player .ovl-btn', state='visible', timeout=120000)
-        p3_start = time.time() - t_p3
+        psp_start = time.time() - t_psp
         sid4 = await current_sid()
-        p3t = await wait_title(sid4, lambda d: d.get('id') == 'MSHR00001', 40)
+        pspt = await wait_title(sid4, lambda d: d.get('id') == 'MSHR00001', 40)
         st4 = session_status(sid4)
-        check('PS3 session runs the worker emulator profile in the sandbox (mock RPCS3)', p3t and title_of(st4).startswith('MOCK-P3') and 'rpcs3' in ((st4.get('live') or {}).get('graphics') or ''), f"{title_of(st4)} · {(st4.get('live') or {}).get('graphics')} · Play → first frame {p3_start:.1f}s")
-        check('PS3 stream reaches the browser', await frame_has_saffron())
+        check('PSP session runs the worker emulator profile in the sandbox (mock PPSSPP)', pspt and title_of(st4).startswith('MOCK-PSP') and 'ppsspp' in ((st4.get('live') or {}).get('graphics') or ''), f"{title_of(st4)} · {(st4.get('live') or {}).get('graphics')} · Play → first frame {psp_start:.1f}s")
+        check('PSP stream reaches the browser', await frame_has_saffron())
+        # 16:9 content (PSP 480×272 stream) on a 4:3 screen: Original → letterbox, Stretch → fills; compositor scaling only
+        vp = page.viewport_size
+        await page.set_viewport_size({'width': 1024, 'height': 768})
+        disp = []
+        for label in ('Original Aspect Ratio', 'Stretch to Device Resolution', 'Original Aspect Ratio'):
+            await page.click('#player .ovl-btn'); await page.click('#player [data-p=res]')
+            await page.click(f'#player button:has-text("{label}")'); await page.keyboard.press('Escape'); await page.wait_for_timeout(400)
+            disp.append(await page.evaluate("""() => { const v = document.querySelector('#player video.game-surface'); const r = v.getBoundingClientRect();
+              return [getComputedStyle(v).objectFit, v.videoWidth, v.videoHeight, Math.round(r.width), Math.round(r.height)]; }"""))
+            shot = Image.open(io.BytesIO(await page.screenshot())).convert('RGB')
+            ys = [y for y in range(shot.size[1]) if max(shot.getpixel((shot.size[0] // 2, y))) >= 6]
+            disp[-1].append((ys[0], ys[-1] + 1) if ys else None)
+        await page.set_viewport_size(vp)
+        a, s_ = disp[0], disp[1]
+        # the mock stream is a lit square on black: its on-screen height grows by exactly 768 / (1024·272/480) when stretched
+        hk = (s_[5][1] - s_[5][0]) / (a[5][1] - a[5][0]) if a[5] and s_[5] else 0
+        check('16:9 PSP stream: Original letterboxes on 4:3, Stretch fills 1024×768 (native 480×272 stream, GPU-scaled)',
+              a[0] == 'contain' and s_[0] == 'fill' and (a[1], a[2]) == (480, 272) == (s_[1], s_[2]) and abs(hk - 768 / (1024 * 272 / 480)) < 0.1
+              and disp[2][0] == 'contain', disp)
         await page.evaluate("window.__padOn = true; dispatchEvent(new Event('gamepadconnected'))")
         await page.wait_for_timeout(300)
         await pad_tap(15); await pad_tap(0); await pad_tap(5)   # D-pad right, cross, R1
-        f1 = await wait_title(sid4, lambda d: int(d['x']) == int(p3t['x']) + 20 and int(d['score']) == int(p3t['score']) + 1 and d.get('pad') == 'r1', 10) if p3t else None
+        f1 = await wait_title(sid4, lambda d: int(d['x']) == int(pspt['x']) + 20 and int(d['score']) == int(pspt['score']) + 1 and d.get('pad') == 'r1', 10) if pspt else None
         check('full controller over the data channel (D-pad, cross, R1 → emulator pad bindings)', f1, f1 or title_of(session_status(sid4)))
         await page.evaluate('window.__padOn = false')
         await page.keyboard.press('ArrowDown')
-        f2 = await wait_title(sid4, lambda d: int(d['y']) == int(p3t['y']) + 20, 10) if p3t else None
+        f2 = await wait_title(sid4, lambda d: int(d['y']) == int(pspt['y']) + 20, 10) if pspt else None
         check('keyboard reaches the emulator', f2, f2)
         await page.evaluate("window.__padOn = true; dispatchEvent(new Event('gamepadconnected'))"); await page.wait_for_timeout(200)
         await pad_tap(3); await page.evaluate('window.__padOn = false')   # triangle = in-game save
@@ -480,14 +504,14 @@ async def main():
         await page.click('#player .ovl-btn')
         await page.click('#player [data-p=exit]')
         gone4 = wait_for(lambda: api('GET', f'/api/session/{sid4}')[0] == 404 and no_leftovers(sid4), 40)
-        check('PS3 session destroyed on exit (sandbox, mounts, cgroups)', gone4)
+        check('PSP session destroyed on exit (sandbox, mounts, cgroups)', gone4)
         await page.wait_for_timeout(1500)
         sessions_seen.clear()
         await page.click('button.btn-play')
         await page.wait_for_selector('#player .ovl-btn', state='visible', timeout=120000)
         sid5 = await current_sid()
         r5 = await wait_title(sid5, lambda d: d.get('id') == 'MSHR00001', 40)
-        check('PS3 save data persisted in the cloud and restored next session', saved4 and r5 and r5.get('loaded') == '1' and r5['x'] == saved4['x'] and r5['y'] == saved4['y'] and r5['score'] == saved4['score'], f'saved {saved4} → next session {r5}')
+        check('PSP save data persisted in the cloud and restored next session', saved4 and r5 and r5.get('loaded') == '1' and r5['x'] == saved4['x'] and r5['y'] == saved4['y'] and r5['score'] == saved4['score'], f'saved {saved4} → next session {r5}')
         await page.click('#player .ovl-btn')
         await page.click('#player [data-p=exit]')
         wait_for(lambda: no_leftovers(sid5), 40)

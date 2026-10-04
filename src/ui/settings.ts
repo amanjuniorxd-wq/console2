@@ -91,6 +91,7 @@ const panels: Record<Tab, (p: HTMLElement) => void | Promise<void>> = {
   display(p) {
     p.append(
       row('Resolution', 'Stream resolution for cloud play. Local games render at native size and scale on the GPU.', pick('resolution', [['auto', 'Auto'], ['720', '720p'], ['1080', '1080p'], ['1440', '1440p'], ['native', 'Native']])),
+      row('Emulator display', 'Original Aspect Ratio (default) keeps the game\'s shape with black bars. Stretch to Device Resolution fills the screen (GPU scaling, intentional distortion). PS1, PS2 and PSP.', pick('emuDisplay', [['aspect', 'Original Aspect Ratio'], ['stretch', 'Stretch to Device Resolution']])),
       row('Emulator scaling', 'Pixel: nearest-neighbour (default). Smooth: bilinear. Sharp: WebGPU sharp-bilinear — crisp at any size, where WebGPU is available.', pick('emuScaling', [['pixel', 'Pixel'], ['smooth', 'Smooth'], ['sharp', 'Sharp (WebGPU)']])),
       row('Performance Stats', 'Small FPS / frame-time readout during play.', flag('showStats', 'Performance Stats')),
     );

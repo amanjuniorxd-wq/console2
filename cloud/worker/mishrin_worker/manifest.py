@@ -54,7 +54,7 @@ DEFAULT_FULL_PAD = {'up': 'Up', 'down': 'Down', 'left': 'Left', 'right': 'Right'
 # Same table as server/lib/manifest.mjs EMULATOR_PLATFORMS: the emulator is fixed per platform.
 EMULATOR_PLATFORMS = {
     'ps2': {'emulator': 'pcsx2', 'boot': re.compile(r'\.(iso|chd|cue)$', re.I), 'ram': 4096, 'cpus': 2, 'storageMB': 8192},
-    'ps3': {'emulator': 'rpcs3', 'boot': re.compile(r'(^|/)EBOOT\.BIN$|\.iso$', re.I), 'ram': 8192, 'cpus': 4, 'storageMB': 65536},
+    'psp': {'emulator': 'ppsspp', 'boot': re.compile(r'\.(iso|cso|pbp)$', re.I), 'ram': 1536, 'cpus': 2, 'storageMB': 4096},
 }
 
 

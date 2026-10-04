@@ -1,13 +1,13 @@
 // Universal runtime tests for the scheduler: uploads (chunked, resumable, deduplicated, inspected server-side),
-// emulator manifests, PS3/PS2 worker protocol with scripted mock workers, runtime capability report, auth,
+// emulator manifests, PSP/PS2 worker protocol with scripted mock workers, archive uploads (ZIP/RAR), runtime capability report, auth,
 // session tokens, runtime failure, cloud saves API. No GPU/emulator needed. Run: node tests/cloud/universal.test.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, deflateRawSync } from 'node:zlib';
 import { validateManifest, runtimeOf } from '../../server/lib/manifest.mjs';
 import { parseSfo, openIso, inspectUpload } from '../../server/lib/inspect.mjs';
 import { CHUNK } from '../../server/lib/storage.mjs';
@@ -63,15 +63,16 @@ const fileEntry = (path, buf) => ({ path, size: buf.length, chunks: chunksOf(buf
 const memStore = parts => { const m = new Map(parts.map(b => [sha(b), b])); return { read: (h, o, l) => m.get(h).subarray(o, o + l), has: h => m.has(h), size: h => m.get(h).length }; };
 
 // ------------------------------------------------------------------ pure: manifests + inspection
-const ps3Files = [{ path: 'Game/PS3_GAME/USRDIR/EBOOT.BIN', size: 4, chunks: ['a'.repeat(64)] }, { path: 'Game/PS3_GAME/PARAM.SFO', size: 4, chunks: ['b'.repeat(64)] }];
-const em = validateManifest({ id: 'p3-test', type: 'emulator', platform: 'ps3', boot: 'Game/PS3_GAME/USRDIR/EBOOT.BIN', files: ps3Files });
-ok('emulator manifest: PS3 title normalised (emulator fixed, defaults, full pad map)', em.emulator === 'rpcs3' && em.requirements.ram === 8192 && em.controllerMap.triangle === 'v' && runtimeOf(em) === 'ps3');
+const pspFiles = [{ path: 'Game/EBOOT.PBP', size: 4, chunks: ['a'.repeat(64)] }, { path: 'Game/GAME.DAT', size: 4, chunks: ['b'.repeat(64)] }];
+const em = validateManifest({ id: 'psp-test', type: 'emulator', platform: 'psp', boot: 'Game/EBOOT.PBP', files: pspFiles });
+ok('emulator manifest: PSP title normalised (emulator fixed, defaults, full pad map)', em.emulator === 'ppsspp' && em.requirements.ram === 1536 && em.controllerMap.triangle === 'v' && runtimeOf(em) === 'psp');
+ok('PS3 is not a platform any more (manifest refused)', (() => { try { validateManifest({ id: 'x', type: 'emulator', platform: 'ps3', boot: 'G/EBOOT.BIN', files: [{ path: 'G/EBOOT.BIN', size: 1, chunks: ['a'.repeat(64)] }] }); return false; } catch { return true; } })());
 const bad = [
-  ['client picks the emulator binary', { emulator: '/bin/sh' }], ['boot outside the files', { boot: 'other/EBOOT.BIN' }], ['boot not a PS3 boot file', { boot: 'Game/PS3_GAME/PARAM.SFO' }],
-  ['args for emulator titles', { args: ['--no-gui'] }], ['network', { network: true }], ['unknown platform', { platform: 'ps5' }], ['traversal', { files: [{ path: '../x/EBOOT.BIN', size: 1, chunks: ['a'.repeat(64)] }], boot: '../x/EBOOT.BIN' }],
+  ['client picks the emulator binary', { emulator: '/bin/sh' }], ['boot outside the files', { boot: 'other/EBOOT.PBP' }], ['boot not a PSP boot file', { boot: 'Game/GAME.DAT' }],
+  ['args for emulator titles', { args: ['--no-gui'] }], ['network', { network: true }], ['unknown platform', { platform: 'ps5' }], ['traversal', { files: [{ path: '../x/EBOOT.PBP', size: 1, chunks: ['a'.repeat(64)] }], boot: '../x/EBOOT.PBP' }],
   ['controller map to arbitrary keys', { controllerMap: { cross: 'Super_L' } }],
 ];
-const accepted = bad.filter(([, o]) => { try { validateManifest({ id: 'x', type: 'emulator', platform: 'ps3', boot: 'Game/PS3_GAME/USRDIR/EBOOT.BIN', files: ps3Files, ...o }); return true; } catch { return false; } });
+const accepted = bad.filter(([, o]) => { try { validateManifest({ id: 'x', type: 'emulator', platform: 'psp', boot: 'Game/EBOOT.PBP', files: pspFiles, ...o }); return true; } catch { return false; } });
 ok(`emulator manifest rejects ${bad.length} unsafe variants`, !accepted.length, accepted.map(x => x[0]).join(', '));
 ok('PS2 manifest: ISO boot accepted, EBOOT rejected', validateManifest({ id: 'p2', type: 'emulator', platform: 'ps2', boot: 'g.iso', files: [{ path: 'g.iso', size: 1, chunks: ['a'.repeat(64)] }] }).emulator === 'pcsx2'
   && (() => { try { validateManifest({ id: 'p2', type: 'emulator', platform: 'ps2', boot: 'EBOOT.BIN', files: [{ path: 'EBOOT.BIN', size: 1, chunks: ['a'.repeat(64)] }] }); return false; } catch { return true; } })());
@@ -83,16 +84,27 @@ const eboot = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46]), Buffer.alloc
 const ps2Iso = makeIso([{ name: 'SYSTEM.CNF', data: Buffer.from('BOOT2 = cdrom0:\\SLUS_000.00;1\r\nVER = 1.00\r\n') }], { system: 'PLAYSTATION' });
 const ps1Iso = makeIso([{ name: 'SYSTEM.CNF', data: Buffer.from('BOOT = cdrom:\\SLUS_000.01;1\r\n') }], { system: 'PLAYSTATION' });
 const ps3Iso = makeIso([{ name: 'PS3_DISC.SFB', data: Buffer.from('.SFB') }], { system: 'PS3VOLUME' });
+const pspIso = makeIso([{ name: 'UMD_DATA.BIN', data: Buffer.from('ULUS-10000|0000000000000000|0001|G') }], { system: 'PSP GAME', volume: 'PSP_TEST', dirs: ['PSP_GAME'] });
+const pbpOf = (cat, title) => { const p = makeSfo({ CATEGORY: cat, DISC_ID: 'MSHR00001', TITLE: title }); const h = Buffer.alloc(40); h.write('\0PBP', 0, 'latin1'); h.writeUInt32LE(0x10000, 4); h.writeUInt32LE(40, 8); for (let i = 1; i < 8; i++) h.writeUInt32LE(40 + p.length, 8 + i * 4); return Buffer.concat([h, p, eboot]); };
+/** CSO (CISO v1, raw-deflate 2048-byte blocks) — the same container PSP dumps use. */
+const toCso = img => { const S = 2048, n = Math.ceil(img.length / S), idx = Buffer.alloc((n + 1) * 4), parts = []; let pos = 24 + idx.length;
+  for (let i = 0; i < n; i++) { const z = deflateRawSync(img.subarray(i * S, i * S + S)); idx.writeUInt32LE(pos, i * 4); parts.push(z); pos += z.length; }
+  idx.writeUInt32LE(pos, n * 4); const h = Buffer.alloc(24); h.write('CISO', 0, 'latin1'); h.writeUInt32LE(24, 4); h.writeBigUInt64LE(BigInt(img.length), 8); h.writeUInt32LE(S, 16); h[20] = 1;
+  return Buffer.concat([h, idx, ...parts]); };
+const pspCso = toCso(pspIso), pspPbp = pbpOf('MG', 'Pbp Game'), ps1Pbp = pbpOf('ME', 'Classic');
 ok('ISO 9660 reader finds SYSTEM.CNF', /BOOT2/.test(openIso({ size: ps2Iso.length, read: (o, l) => ps2Iso.subarray(o, o + l) }).text('SYSTEM.CNF')));
 const insp = (files, parts) => { try { return inspectUpload(files, memStore(parts)); } catch (e) { return { error: e.message, status: e.status }; } };
-ok('inspect: PS3 game folder → ps3 (title + id from PARAM.SFO)', (r => r.platform === 'ps3' && r.serial === 'MSHR00001' && r.boot === 'G/PS3_GAME/USRDIR/EBOOT.BIN')(insp([fileEntry('G/PS3_GAME/PARAM.SFO', sfo), fileEntry('G/PS3_GAME/USRDIR/EBOOT.BIN', eboot)], [sfo, eboot])));
-ok('inspect: PS3 folder whose EBOOT is not SELF/ELF → rejected', insp([fileEntry('G/PS3_GAME/PARAM.SFO', sfo), fileEntry('G/PS3_GAME/USRDIR/EBOOT.BIN', Buffer.from('MZxx'))], [sfo, Buffer.from('MZxx')]).status === 422);
+ok('inspect: PS3 game folder → refused ("PS3 games are not supported"), never routed', (r => r.status === 422 && /PS3 games are not supported/.test(r.error))(insp([fileEntry('G/PS3_GAME/PARAM.SFO', sfo), fileEntry('G/PS3_GAME/USRDIR/EBOOT.BIN', eboot)], [sfo, eboot])));
+ok('inspect: PSP UMD ISO (PSP_GAME + UMD_DATA.BIN) → psp with serial', (r => r.platform === 'psp' && r.serial === 'ULUS-10000' && r.format === 'iso')(insp([fileEntry('g.iso', pspIso)], chunksOf(pspIso))));
+ok('inspect: PSP CSO → psp (blocks inflated on demand)', (r => r.platform === 'psp' && r.format === 'cso')(insp([fileEntry('g.cso', pspCso)], chunksOf(pspCso))));
+ok('inspect: PSP homebrew folder (EBOOT.PBP) → psp; PSone PBP (CATEGORY ME) → PS1 local', (r => r.platform === 'psp' && r.boot === 'Hb/EBOOT.PBP' && r.title === 'Pbp Game')(insp([fileEntry('Hb/EBOOT.PBP', pspPbp), fileEntry('Hb/GAME.DAT', sfo)], [pspPbp, sfo]))
+  && insp([fileEntry('x.pbp', ps1Pbp)], [ps1Pbp]).status === 422);
 ok('inspect: PS2 DVD ISO (SYSTEM.CNF BOOT2) → ps2', (r => r.platform === 'ps2' && r.serial === 'SLUS_000.00')(insp([fileEntry('disc.iso', ps2Iso)], chunksOf(ps2Iso))));
-ok('inspect: PS3 ISO (PS3_DISC.SFB) → ps3', insp([fileEntry('disc.iso', ps3Iso)], chunksOf(ps3Iso)).platform === 'ps3');
+ok('inspect: PS3 ISO (PS3_DISC.SFB) → refused, not routed', /PS3 games are not supported/.test(insp([fileEntry('disc.iso', ps3Iso)], chunksOf(ps3Iso)).error || ''));
 ok('inspect: PS1 disc → told to play locally (422)', insp([fileEntry('disc.iso', ps1Iso)], chunksOf(ps1Iso)).status === 422);
 ok('inspect: random bytes → unsupported (415)', insp([fileEntry('x.bin', Buffer.alloc(5000, 7))], [Buffer.alloc(5000, 7)]).status === 415);
 const pkg = Buffer.concat([Buffer.from([0x7f, 0x50, 0x4b, 0x47]), Buffer.alloc(100)]);
-ok('inspect: PS3 PKG → explained, not accepted', /PKG/.test(insp([fileEntry('x.pkg', pkg)], [pkg]).error || ''));
+ok('inspect: PKG → explained, not accepted', /PKG/.test(insp([fileEntry('x.pkg', pkg)], [pkg]).error || ''));
 const exe = readFileSync(join(HERE, '../../cloud/test-games/pkg/gdi64/wintest64.exe'));
 ok('inspect: Windows PE → windows x64', (r => r.platform === 'windows' && r.arch === 'x64')(insp([fileEntry('anything.bin', exe)], chunksOf(exe))));
 
@@ -151,7 +163,7 @@ const workers = [];
 try {
   // ---- capability report before any emulator worker exists
   let rep = await req(A.base, 'GET', '/api/runtimes');
-  ok('runtime report: nothing deployed → empty (UI must not show PS3 as available)', rep.status === 200 && !rep.body.runtimes.ps3 && !rep.body.runtimes['x64-win']);
+  ok('runtime report: nothing deployed → empty (UI must not show PSP as available)', rep.status === 200 && !rep.body.runtimes.psp && !rep.body.runtimes['x64-win'] && rep.body.uploads.archives === true);
 
   // ---- uploads: declare → missing → chunks → resume → complete
   const big = Buffer.concat([ps2Iso, Buffer.alloc(CHUNK + 1000, 3)]);      // > 1 chunk, real ISO at the front
@@ -178,41 +190,44 @@ try {
   ok('PS1-class upload refused with a pointer to local play', ps1c.status === 422 && /locally/.test(ps1c.body.error));
   const [, junk] = await uploadAll(A.base, [fileEntry('x.dat', Buffer.alloc(3000, 9))], [Buffer.alloc(3000, 9)], { 'x-save-key': KEY });
   ok('unknown content refused (415)', junk.status === 415);
-  const sfoBuf = sfo, folder = [fileEntry('Orbit/PS3_GAME/PARAM.SFO', sfoBuf), fileEntry('Orbit/PS3_GAME/USRDIR/EBOOT.BIN', eboot)];
-  const [, p3] = await uploadAll(A.base, folder, [sfoBuf, eboot], { 'x-save-key': KEY });
-  ok('PS3-class game folder upload → ps3 (title from PARAM.SFO)', p3.status === 201 && p3.body.platform === 'ps3' && p3.body.title === 'Saffron Orbit' && p3.body.serial === 'MSHR00001', JSON.stringify(p3.body));
+  const sfoBuf = sfo, folder = [fileEntry('Orbit/EBOOT.PBP', pspPbp), fileEntry('Orbit/GAME.DAT', sfoBuf)];
+  const [, pp] = await uploadAll(A.base, folder, [pspPbp, sfoBuf], { 'x-save-key': KEY });
+  ok('PSP game folder upload → psp (title from the PBP\'s PARAM.SFO)', pp.status === 201 && pp.body.platform === 'psp' && pp.body.title === 'Pbp Game' && pp.body.serial === 'MSHR00001', JSON.stringify(pp.body));
+  const [, ps3u] = await uploadAll(A.base, [fileEntry('G/PS3_GAME/PARAM.SFO', sfoBuf), fileEntry('G/PS3_GAME/USRDIR/EBOOT.BIN', eboot)], [sfoBuf, eboot], { 'x-save-key': KEY });
+  ok('PS3 game folder upload → refused (PS3 removed)', ps3u.status === 422 && /PS3 games are not supported/.test(ps3u.body.error));
 
-  // ---- no PS3 worker deployed → honest 503 without a queue
-  let s = await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: p3.body.id }, offer, client: { saveKey: KEY } });
-  ok('PS3 session with no PS3 worker → 503 "not deployed" (no fake queue)', s.status === 503 && s.body.deployed === false && !s.body.queue && /deployed/.test(s.body.error), JSON.stringify(s.body));
+  // ---- no PSP worker deployed → honest 503 without a queue
+  let s = await req(A.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: pp.body.id }, offer, client: { saveKey: KEY } });
+  ok('PSP session with no PSP worker → 503 "not deployed" (no fake queue)', s.status === 503 && s.body.deployed === false && !s.body.queue && /deployed/.test(s.body.error), JSON.stringify(s.body));
+  ok('PS3 runtime requests refused', (await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: pp.body.id }, offer, client: { saveKey: KEY } })).status >= 400);
 
-  // ---- mock PS3 workers: protocol, runtime failure, firmware error, ownership
-  const crash = new MockWorker('ps3-crashy', ['ps3'], [{ name: 'rpcs3', runtime: 'ps3', version: 'mock', firmware: true, mock: true }], () => ({ error: 'emulator exited during startup (code 139)' }));
-  const good = new MockWorker('ps3-good', ['ps3'], [{ name: 'rpcs3', runtime: 'ps3', version: 'mock', firmware: true, mock: true }]);
-  crash.cache = [p3.body.manifestHash];   // cache affinity makes the crashing worker the first choice
+  // ---- mock PSP workers: protocol, runtime failure, setup error, ownership
+  const crash = new MockWorker('psp-crashy', ['psp'], [{ name: 'ppsspp', runtime: 'psp', version: 'mock', firmware: true, mock: true }], () => ({ error: 'emulator exited during startup (code 139)' }));
+  const good = new MockWorker('psp-good', ['psp'], [{ name: 'ppsspp', runtime: 'psp', version: 'mock', firmware: true, mock: true }]);
+  crash.cache = [pp.body.manifestHash];   // cache affinity makes the crashing worker the first choice
   workers.push(await crash.start(), await good.start());
   await sleep(700);
   rep = await req(A.base, 'GET', '/api/runtimes');
-  const r3 = rep.body.runtimes.ps3;
-  ok('runtime report: PS3 from live workers, flagged mock', r3 && r3.workers === 2 && r3.capacity === 2 && r3.free === 2 && r3.mock === true && r3.emulators.every(e => e.name === 'rpcs3' && e.mock), JSON.stringify(r3));
-  ok('wrong-platform request refused (PS2 upload on PS3 runtime)', (await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: ps2Upload }, offer, client: { saveKey: KEY } })).status === 400);
-  ok("another player's upload cannot be played", (await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: p3.body.id }, offer, client: { saveKey: 'intruder-key-0123456789' } })).status === 404);
-  s = await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: p3.body.id, executable: '/bin/sh' }, offer, client: { saveKey: KEY } });
+  const rp = rep.body.runtimes.psp;
+  ok('runtime report: PSP from live workers, flagged mock', rp && rp.workers === 2 && rp.capacity === 2 && rp.free === 2 && rp.mock === true && rp.emulators.every(e => e.name === 'ppsspp' && e.mock), JSON.stringify(rp));
+  ok('wrong-platform request refused (PS2 upload on PSP runtime)', (await req(A.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: ps2Upload }, offer, client: { saveKey: KEY } })).status === 400);
+  ok("another player's upload cannot be played", (await req(A.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: pp.body.id }, offer, client: { saveKey: 'intruder-key-0123456789' } })).status === 404);
+  s = await req(A.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: pp.body.id, executable: '/bin/sh' }, offer, client: { saveKey: KEY } });
   const tried = [...crash.msgs, ...good.msgs].filter(m => m.type === 'session' && m.id === s.body.id);
   const gm = good.msgs.find(m => m.type === 'session' && m.id === s.body.id);
-  ok('runtime failure on one worker → retried on another', s.status === 201 && s.body.worker === 'ps3-good' && tried.length === 2 && crash.msgs.some(m => m.id === s.body.id), `${s.status} ${JSON.stringify(s.body).slice(0, 100)}`);
-  ok('PS3 worker gets a validated emulator manifest (boot from the upload, no client fields)', gm && gm.manifest.type === 'emulator' && gm.manifest.emulator === 'rpcs3' && gm.manifest.boot === 'Orbit/PS3_GAME/USRDIR/EBOOT.BIN' && !JSON.stringify(gm).includes('/bin/sh'));
-  ok('session token issued for the PS3 session', typeof s.body.token === 'string' && s.body.token.length >= 40);
+  ok('runtime failure on one worker → retried on another', s.status === 201 && s.body.worker === 'psp-good' && tried.length === 2 && crash.msgs.some(m => m.id === s.body.id), `${s.status} ${JSON.stringify(s.body).slice(0, 100)}`);
+  ok('PSP worker gets a validated emulator manifest (boot from the upload, no client fields)', gm && gm.manifest.type === 'emulator' && gm.manifest.emulator === 'ppsspp' && gm.manifest.boot === 'Orbit/EBOOT.PBP' && !JSON.stringify(gm).includes('/bin/sh'));
+  ok('session token issued for the PSP session', typeof s.body.token === 'string' && s.body.token.length >= 40);
   rep = await req(A.base, 'GET', '/api/runtimes');
-  ok('runtime report tracks active sessions', rep.body.runtimes.ps3.active === 1);
-  const fw = new MockWorker('ps3-nofw', ['ps3'], [{ name: 'rpcs3', runtime: 'ps3', firmware: false, mock: true }], () => ({ error: 'PS3 firmware is not installed on this worker.' }));
-  // make the firmware-less worker the only free one: occupy ps3-crashy by stopping it, keep ps3-good busy
+  ok('runtime report tracks active sessions', rep.body.runtimes.psp.active === 1);
+  const fw = new MockWorker('psp-broken', ['psp'], [{ name: 'ppsspp', runtime: 'psp', firmware: true, mock: true }], () => ({ error: 'ppsspp is not installed on this worker' }));
+  // make the broken worker the only free one: stop psp-crashy, keep psp-good busy
   crash.stop(); await sleep(3600);
   workers.push(await fw.start());
-  const s2 = await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: p3.body.id }, offer, client: { saveKey: KEY }, queue: false });
-  ok('firmware missing on the worker → clear 502, not retried blindly', s2.status === 502 && /firmware/i.test(s2.body.error), JSON.stringify(s2.body));
+  const s2 = await req(A.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: pp.body.id }, offer, client: { saveKey: KEY }, queue: false });
+  ok('worker setup error (emulator missing) → clear 502, not retried blindly', s2.status === 502 && /not installed/i.test(s2.body.error), JSON.stringify(s2.body));
   await req(A.base, 'DELETE', `/api/session/${s.body.id}`);
-  ok('session destruction frees the slot', (await req(A.base, 'GET', '/api/runtimes')).body.runtimes.ps3.active === 0);
+  ok('session destruction frees the slot', (await req(A.base, 'GET', '/api/runtimes')).body.runtimes.psp.active === 0);
 
   // ---- PS2 via the same protocol
   const p2w = new MockWorker('ps2-mock', ['ps2'], [{ name: 'pcsx2', runtime: 'ps2', firmware: true, mock: true }]);
@@ -226,6 +241,35 @@ try {
   workers.push(await tiny.start());
   s = await req(A.base, 'POST', '/api/session', { game: { runtime: 'ps2', upload: ps2Upload }, offer, client: { saveKey: KEY } });
   ok('title too large for every deployed worker → immediate 503 (no endless queue)', s.status === 503 && s.body.fits === false && !s.body.queue && /4096 MB/.test(s.body.error), JSON.stringify(s.body));
+
+  // ---- archives (ZIP / RAR4 / RAR5, nested): one uploaded file, extracted by the cloud, routed by the extracted contents
+  const arcDir = mkdtempSync(join(tmpdir(), 'mishrin-arc-'));
+  spawnSync('python3', [join(HERE, 'make_archives.py'), arcDir]);
+  const upArc = async (name, key = KEY) => { const b = readFileSync(join(arcDir, name)); return (await uploadAll(A.base, [fileEntry(name, b)], chunksOf(b), { 'x-save-key': key }))[1]; };
+  let a = await upArc('psp-folder.zip');
+  ok('ZIP → PSP homebrew folder found inside → psp (not forced to Windows)', a.status === 201 && a.body.platform === 'psp' && a.body.boot === 'Archive Test/EBOOT.PBP', JSON.stringify(a.body));
+  a = await upArc('ps2.rar');
+  ok('RAR 5 → PS2 disc image inside → ps2', a.status === 201 && a.body.platform === 'ps2' && a.body.boot === 'Game/disc.iso', JSON.stringify(a.body));
+  const ps1a = await upArc('ps1.rar');
+  ok('RAR 4 → PS1 disc inside → ps1, returned to the browser for local play', ps1a.status === 201 && ps1a.body.platform === 'ps1' && ps1a.body.files?.[0]?.path === 'disc/game.iso', JSON.stringify(ps1a.body));
+  const back = await fetch(`${A.base}/api/uploads/${ps1a.body.id}/files/0`, { headers: { 'x-save-key': KEY } });
+  const backBuf = Buffer.from(await back.arrayBuffer());
+  ok('extracted PS1 file downloads intact for its owner only', back.status === 200 && backBuf.length === 65536 && backBuf.subarray(16 * 2048 + 1, 16 * 2048 + 6).toString() === 'CD001'
+    && (await fetch(`${A.base}/api/uploads/${ps1a.body.id}/files/0`, { headers: { 'x-save-key': 'intruder-key-0123456789' } })).status === 404);
+  a = await upArc('nested.zip');
+  ok('nested archive (zip in zip) → PSP UMD image inside → psp', a.status === 201 && a.body.platform === 'psp' && /umd\/game\.iso$/.test(a.body.boot), JSON.stringify(a.body));
+  a = await upArc('windows.zip');
+  ok('ZIP → Windows game folder → windows (shallowest PE as executable)', a.status === 201 && a.body.platform === 'windows' && a.body.boot === 'MyGame/bin/game.exe', JSON.stringify(a.body));
+  a = await upArc('traversal.zip');
+  ok('malicious path traversal inside an archive → refused before extraction', a.status === 422 && /Unsafe path/.test(a.body.error), JSON.stringify(a.body));
+  a = await upArc('symlink.zip');
+  ok('symlink inside an archive → refused', a.status === 422 && /Links are not allowed/.test(a.body.error), JSON.stringify(a.body));
+  a = await upArc('bomb.zip');
+  ok('zip bomb (300 MB of zeros) → refused by the ratio guard, nothing extracted', a.status === 422 && /ratio/.test(a.body.error), JSON.stringify(a.body));
+  a = await upArc('ps3.zip');
+  ok('ZIP with a PS3 game → refused (PS3 removed)', a.status === 422 && /PS3 games are not supported/.test(a.body.error), JSON.stringify(a.body));
+  const t0 = Date.now(); a = await upArc('ps2.rar', 'second-player-key-0123456');
+  ok('same archive from another player: deduplicated chunks + cached extraction', a.status === 201 && a.body.platform === 'ps2' && /from rar/.test(A.p.logs) && Date.now() - t0 < 3000);
 
   // ---- packages are private: only workers read chunks
   ok('chunks are not publicly downloadable', (await req(A.base, 'GET', `/v1/packages/${sha(sfoBuf)}`)).status === 401
@@ -249,16 +293,16 @@ try {
     && (await req(B.base, 'POST', '/api/auth/device', {}, { authorization: 'Bearer wrong' })).status === 401);
   const dt = await req(B.base, 'POST', '/api/auth/device', {}, { authorization: 'Bearer invite-key-1' });
   ok('auth: device token issued with a client key', dt.status === 201 && dt.body.token.startsWith('d1.'));
-  ok('auth: sessions/uploads/saves refused without a device token (legacy saveKey not enough)', (await req(B.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: 'x' }, offer, client: { saveKey: KEY } })).status === 401
+  ok('auth: sessions/uploads/saves refused without a device token (legacy saveKey not enough)', (await req(B.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: 'x' }, offer, client: { saveKey: KEY } })).status === 401
     && (await req(B.base, 'POST', '/api/uploads', { files }, { 'x-save-key': KEY })).status === 401 && (await req(B.base, 'GET', '/api/saves', undefined, { 'x-save-key': KEY })).status === 401);
   const forged = dt.body.token.replace(/.$/, c => (c === 'A' ? 'B' : 'A'));
   ok('auth: tampered device token refused', (await req(B.base, 'GET', '/api/saves', undefined, { 'x-device-token': forged })).status === 401);
   const dh = { 'x-device-token': dt.body.token };
-  const [, bu] = await uploadAll(B.base, folder, [sfoBuf, eboot], dh);
+  const [, bu] = await uploadAll(B.base, folder, [pspPbp, sfoBuf], dh);
   ok('auth: authenticated upload + saves work', bu.status === 201 && (await req(B.base, 'GET', '/api/saves', undefined, dh)).status === 200);
-  const bw = new MockWorker('ps3-b', ['ps3'], [{ name: 'rpcs3', runtime: 'ps3', firmware: true, mock: true }]);
+  const bw = new MockWorker('psp-b', ['psp'], [{ name: 'ppsspp', runtime: 'psp', firmware: true, mock: true }]);
   workers.push(await bw.start(B.base));
-  s = await req(B.base, 'POST', '/api/session', { game: { runtime: 'ps3', upload: bu.body.id }, offer }, dh);
+  s = await req(B.base, 'POST', '/api/session', { game: { runtime: 'psp', upload: bu.body.id }, offer }, dh);
   ok('auth: authenticated player starts a session; saves keyed to the device', s.status === 201);
 } catch (e) {
   ok('universal test harness', false, e.stack);
