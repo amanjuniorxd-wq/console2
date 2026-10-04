@@ -9,7 +9,6 @@
  */
 import { idb } from '../mpc/idb';
 import { base, idHeaders } from '../cloud/identity';
-import { unzipSync } from 'fflate';
 
 export const CHUNK = 4 * 1024 * 1024;
 export interface UploadFile { path: string; blob: Blob }
