@@ -1,0 +1,1410 @@
+[
+ {
+  "name": "valid minimal manifest",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "backslash paths are normalised",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin\\Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "args with plain strings",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "args": [
+    "-windowed",
+    "--res=1280x720"
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "controllerMap with allowed keys",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "controllerMap": {
+    "a": "space",
+    "start": "Escape"
+   }
+  },
+  "valid": true
+ },
+ {
+  "name": "x86 dxvk title",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "arch": "x86",
+   "graphics": "dxvk"
+  },
+  "valid": true
+ },
+ {
+  "name": "bad id",
+  "manifest": {
+   "id": "Bad_ID",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "type must be windows",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "linux",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "runtime must be wine",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "proton-exec",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "absolute executable",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "/usr/bin/bash",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "drive-letter executable",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "C:\\Windows\\System32\\cmd.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "parent traversal",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "../../bin/sh.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "executable not in files",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Other.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "executable not .exe",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "data/a.pak",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "shell metacharacters in path",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    },
+    {
+     "path": "bin/x;rm -rf.exe",
+     "size": 1,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "shell metacharacters in args",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "args": [
+    "$(reboot)"
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "quotes in args",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "args": [
+    "\"; curl evil\""
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "args not a list",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "args": "-windowed"
+  },
+  "valid": false
+ },
+ {
+  "name": "command field is not honoured",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "cmd.exe /c calc",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "network true rejected",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": true,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "ram out of range",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 999999,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "gpu not boolean",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 2048,
+    "gpu": "yes"
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "duplicate files (case-insensitive)",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    },
+    {
+     "path": "BIN/game.exe",
+     "size": 1,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "bad chunk hash",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "xyz"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "reserved device name",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    },
+    {
+     "path": "bin/con.txt",
+     "size": 1,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "working directory outside game",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "nope",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "unknown graphics backend",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "graphics": "opengl-hack"
+  },
+  "valid": false
+ },
+ {
+  "name": "controllerMap arbitrary key",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "controllerMap": {
+    "a": "Super_L"
+   }
+  },
+  "valid": false
+ },
+ {
+  "name": "empty files",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": []
+  },
+  "valid": false
+ },
+ {
+  "name": "display too large",
+  "manifest": {
+   "id": "good-game",
+   "title": "Good",
+   "type": "windows",
+   "runtime": "wine",
+   "executable": "bin/Game.exe",
+   "workingDirectory": "bin",
+   "network": false,
+   "requirements": {
+    "ram": 4096,
+    "gpu": true
+   },
+   "files": [
+    {
+     "path": "bin/Game.exe",
+     "size": 10,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "data/a.pak",
+     "size": 5,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "display": {
+    "width": 9000,
+    "height": 9000
+   }
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: PS3 folder",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "emulator: PS2 ISO",
+  "manifest": {
+   "id": "emu-ps2",
+   "type": "emulator",
+   "platform": "ps2",
+   "boot": "disc/game.iso",
+   "files": [
+    {
+     "path": "disc/game.iso",
+     "size": 10,
+     "chunks": [
+      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+     ]
+    }
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "emulator: PS2 CHD",
+  "manifest": {
+   "id": "emu-ps2",
+   "type": "emulator",
+   "platform": "ps2",
+   "boot": "g.chd",
+   "files": [
+    {
+     "path": "g.chd",
+     "size": 1,
+     "chunks": [
+      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+     ]
+    }
+   ]
+  },
+  "valid": true
+ },
+ {
+  "name": "emulator: client-chosen binary",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "emulator": "/usr/bin/xterm"
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: wrong emulator for platform",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "emulator": "pcsx2"
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: boot not in files",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "X/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: boot not a boot file",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/PARAM.SFO",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: args",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "args": [
+    "--debug"
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: network",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "network": true
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: unknown platform",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps4",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: traversal in boot",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "../EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: controller map arbitrary key",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "controllerMap": {
+    "l1": "Super_L"
+   }
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: controller map unknown button",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "controllerMap": {
+    "home": "h"
+   }
+  },
+  "valid": false
+ },
+ {
+  "name": "emulator: controller map ok",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "controllerMap": {
+    "cross": "space"
+   }
+  },
+  "valid": true
+ },
+ {
+  "name": "emulator: absurd RAM",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "emulator",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ],
+   "requirements": {
+    "ram": 1000000000
+   }
+  },
+  "valid": false
+ },
+ {
+  "name": "type: unknown",
+  "manifest": {
+   "id": "emu-ps3",
+   "type": "shell",
+   "platform": "ps3",
+   "boot": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+   "files": [
+    {
+     "path": "Game/PS3_GAME/USRDIR/EBOOT.BIN",
+     "size": 4,
+     "chunks": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "path": "Game/PS3_GAME/PARAM.SFO",
+     "size": 4,
+     "chunks": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ]
+    }
+   ]
+  },
+  "valid": false
+ }
+]

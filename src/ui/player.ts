@@ -4,6 +4,7 @@ import type { Game } from '../games/types';
 import { launch, caps, reclaimAll } from '../mpc';
 import type { Session } from '../runtime/types';
 import { Btn } from '../runtime/types';
+import { KEY_LOGICAL } from '../input/pad';
 import { writeSave, readSave, saveInfo } from '../mpc/saves';
 import { settings, setSetting } from './settings-store';
 import { capturePad, focusEl, pushBack } from '../components/nav';
@@ -12,10 +13,7 @@ import { ic } from '../components/icons';
 import { esc, h, chips, toast, fmtBytes } from '../components/ui';
 import { exitFullscreen } from './fullscreen';
 
-const KEYMAP: Record<string, Btn> = {
-  ArrowUp: Btn.Up, KeyW: Btn.Up, ArrowDown: Btn.Down, KeyS: Btn.Down, ArrowLeft: Btn.Left, KeyA: Btn.Left, ArrowRight: Btn.Right, KeyD: Btn.Right,
-  Space: Btn.A, Enter: Btn.A, KeyZ: Btn.A, KeyJ: Btn.A, KeyX: Btn.B, KeyK: Btn.B, KeyP: Btn.Start, Tab: Btn.Start,
-};
+const KEYMAP = KEY_LOGICAL; // unified input tables (src/input/pad.ts)
 type Panel = 'perf' | 'res' | 'controls' | 'save';
 
 export function player(_el: HTMLElement, id: string) {
@@ -62,10 +60,11 @@ export function player(_el: HTMLElement, id: string) {
       const r = await launch(g, surface, { status, signal: ctrl.signal });
       if (closed) { r.session.dispose(); return; }
       session = r.session;
+      padFull = session.padState ? (f: number, r: number, a: [number, number, number, number]) => session?.padState?.(f, r, a) : null;
       session.onEnd = reason => fail(reason, 'ended');
       session.setMaxFps?.(settings.maxFps);
       loading.hidden = true; ovlBtn.hidden = false;
-      capturePad(padToGame, toggleOverlay);
+      capturePad(padToGame, toggleOverlay, padFull);
       if (r.fellBack) toast('Optimized for this device');
       if (!session.ownsInput) setupTouch();
       applyDisplay();
@@ -129,7 +128,7 @@ export function player(_el: HTMLElement, id: string) {
     if (overlay.hidden) return;
     overlay.hidden = true; panel.hidden = true; session?.pause(false);
     popOverlayBack?.(); popOverlayBack = null;
-    if (session) capturePad(padToGame, toggleOverlay);
+    if (session) capturePad(padToGame, toggleOverlay, padFull);
     surface.querySelector<HTMLElement>('iframe, canvas, video')?.focus();
   }
   const toggleOverlay = () => (overlay.hidden ? openOverlay() : closeOverlay());
@@ -220,6 +219,8 @@ export function player(_el: HTMLElement, id: string) {
 
   // ---------- input ----------
   const padToGame = (b: Btn, down: boolean) => (session?.padInput ?? session?.input)?.call(session, b, down);
+  // Gamepad: full 16-button state for adapters that take it (P1, cloud emulator titles), logical buttons otherwise.
+  let padFull: ((full: number, raw: number, axes: [number, number, number, number]) => void) | null = null;
   const popExit = pushBack(exit); // B / Esc on loading & error screens leaves the game
 
   const onKey = (e: KeyboardEvent) => {

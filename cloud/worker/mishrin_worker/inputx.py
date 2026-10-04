@@ -7,15 +7,22 @@ Wire format = existing `input` data channel (server/PROTOCOL.md):
   [2, buttons, x:u16, y:u16] pointer
   [4, steps:i8]              mouse wheel notches (+ down)
   [3, btn, down]            controller / touch button → mapped to keys by controllerMap
+  [5, mask:u16, lx, ly, rx, ry]  full controller state: 16 buttons (FULL_PAD bit order) + optional analog sticks (int8,
+                             -127..127) → keys by controllerMap; each stick direction past half deflection = its key
   text "k1<code>" / "k0<code>" raw key
 """
+import re
 import struct
 import threading
+import time
 
 from Xlib import X, XK, display as xdisplay
 from Xlib.ext import xtest
 
 BTN_NAMES = ['up', 'down', 'left', 'right', 'a', 'b', 'start']
+FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'select', 'start', 'l3', 'r3']
+STICKS = ['lup', 'ldown', 'lleft', 'lright', 'rup', 'rdown', 'rleft', 'rright']
+LOGICAL_ALIAS = {'a': 'cross', 'b': 'circle'}  # logical A/B on a full-pad (emulator) map
 
 CODE_TO_KEYSYM = {
     **{f'Key{c}': c.lower() for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'},
@@ -33,7 +40,7 @@ CODE_TO_KEYSYM = {
 
 
 class Injector:
-    def __init__(self, display_num, controller_map):
+    def __init__(self, display_num, controller_map, focus_title=None, autorepeat=True):
         # XAUTHORITY points at the worker-wide cookie file (each session display has its own cookie).
         self.d = xdisplay.Display(f':{display_num}')
         self.root = self.d.screen().root
@@ -42,17 +49,42 @@ class Injector:
         self.lock = threading.Lock()
         self.down_keys = set()
         self.buttons = 0
+        self.mask = 0
         self.events = 0
+        self._focus_checked = 0.0
+        self.focus_re = re.compile(focus_title) if focus_title else None   # emulators with several windows (RPCS3)
+        if not autorepeat:   # a held pad button is one press: X autorepeat's synthetic release/press pairs confuse pad plugins
+            self.d.change_keyboard_control(auto_repeat_mode=X.AutoRepeatModeOff)
+            self.d.flush()
 
     def _keycode(self, keysym_name):
         ks = XK.string_to_keysym(keysym_name)
         return self.d.keysym_to_keycode(ks) if ks else 0
+
+    def _ensure_focus(self):
+        """There is no window manager: X focus defaults to PointerRoot, so keys would go to whatever is under the
+        pointer (often nothing when the game window is smaller than the display). Focus the game's top-level window."""
+        now = time.monotonic()
+        if now - self._focus_checked < 1.0:
+            return
+        self._focus_checked = now
+        try:
+            wins = [w for w in reversed(self.root.query_tree().children)   # stacking order: last = topmost
+                    if w.get_attributes().map_state == X.IsViewable and w.get_wm_name()]
+            if self.focus_re:
+                wins = sorted(wins, key=lambda w: not self.focus_re.search(str(w.get_wm_name())))
+            if wins and self.d.get_input_focus().focus != wins[0]:
+                wins[0].set_input_focus(X.RevertToParent, X.CurrentTime)
+        except Exception:
+            pass
 
     def key(self, keysym_name, down):
         kc = self._keycode(keysym_name)
         if not kc:
             return False
         with self.lock:
+            if down:
+                self._ensure_focus()
             xtest.fake_input(self.d, X.KeyPress if down else X.KeyRelease, kc)
             self.d.flush()
             (self.down_keys.add if down else self.down_keys.discard)(kc)
@@ -94,9 +126,21 @@ class Injector:
             return
         t = data[0]
         if t == 3 and len(data) >= 3 and data[1] < len(BTN_NAMES):
-            ks = self.pad.get(BTN_NAMES[data[1]])
+            name = BTN_NAMES[data[1]]
+            ks = self.pad.get(name) or self.pad.get(LOGICAL_ALIAS.get(name, ''))
             if ks:
                 self.key(ks, bool(data[2]))
+        elif t == 5 and len(data) >= 3:
+            mask = (data[1] << 8) | data[2]
+            if len(data) >= 7:   # sticks → 8 virtual direction buttons (bits 16..23)
+                lx, ly, rx, ry = struct.unpack('>bbbb', bytes(data[3:7]))
+                for bit, on in enumerate((ly < -64, ly > 64, lx < -64, lx > 64, ry < -64, ry > 64, rx < -64, rx > 64)):
+                    if on:
+                        mask |= 1 << (16 + bit)
+            changed, self.mask = mask ^ self.mask, mask
+            for i, name in enumerate(FULL_PAD + STICKS):
+                if changed & (1 << i) and self.pad.get(name):
+                    self.key(self.pad[name], bool(mask & (1 << i)))
         elif t == 2 and len(data) >= 6:
             buttons, x, y = struct.unpack('>BHH', bytes(data[1:6]))
             self.pointer(buttons, x / 65535, y / 65535)
@@ -110,6 +154,7 @@ class Injector:
             for kc in list(self.down_keys):
                 xtest.fake_input(self.d, X.KeyRelease, kc)
             self.down_keys.clear()
+            self.mask = 0
             self.d.flush()
 
     def windows(self):

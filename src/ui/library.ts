@@ -6,6 +6,7 @@ import { card } from '../components/card';
 import { ic } from '../components/icons';
 import { h, modal, chips, toast } from '../components/ui';
 import { focusEl } from '../components/nav';
+import { cloudReport } from '../runtimes/cloud-status';
 
 const MIN_W = 240, GAP = 18, META = 0; // card height = width * 9/16 (meta overlays the art)
 
@@ -79,7 +80,7 @@ export function library(el: HTMLElement) {
   const grid = vgrid(el, addBtn);
   el.append(grid.el);
   const apply = () => {
-    const list = games.filter(g => (f === 'all' || (f === 'ready' ? isPlayable(g) : f === 'nofile' ? !isPlayable(g) : CLOUD_ONLY.has(g.runtime))) && score(g, q) > 0);
+    const list = games.filter(g => (f === 'all' || (f === 'ready' ? isPlayable(g) : f === 'nofile' ? !isPlayable(g) : CLOUD_ONLY.has(g.runtime) || g.url.startsWith('upload:'))) && score(g, q) > 0);
     grid.set(list);
   };
   let t = 0;
@@ -87,7 +88,10 @@ export function library(el: HTMLElement) {
   apply();
   grid.first()?.setAttribute('data-autofocus', ''); // controller-first: land on a game, not the text field
   const off = onCatalog(apply);
-  return () => { off(); grid.dispose(); };
+  // Live runtime status (cloud workers) feeds every card's "platform · LOCAL/CLOUD · status" line.
+  addEventListener('mishrin:runtimes', apply);
+  cloudReport().catch(() => {});
+  return () => { off(); removeEventListener('mishrin:runtimes', apply); grid.dispose(); };
 }
 
 export function search(el: HTMLElement) {

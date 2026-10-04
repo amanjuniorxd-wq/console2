@@ -1,4 +1,4 @@
-# Mishrin Cloud protocol (v1 + Windows extension v1.1)
+# Mishrin Cloud protocol (v1 + Windows extension v1.1 + universal runtimes v1.2)
 
 Console ⇄ **broker** (HTTP/JSON, CORS) ⇄ **node** (long-poll). Media goes node → console over WebRTC; the broker only relays signaling and package bytes.
 
@@ -27,6 +27,23 @@ Console ⇄ **broker** (HTTP/JSON, CORS) ⇄ **node** (long-poll). Media goes no
 | `DELETE /api/session/:id` | = `DELETE /v1/sessions/:id` |
 | `GET /v1/games` | registered cloud titles (`id`, `title`, `runtime`) |
 
+### v1.2 — universal runtimes
+
+| Call | Purpose |
+|---|---|
+| `POST /api/session` → `201 { id, token, answer, worker }` | `token` (256-bit) must accompany every later call for that session: header `x-session-token` (or `?token=`). Without it: `403`. Operators may use the admin bearer token instead. |
+| `503 { error, queue: { ticket, token, position } }` | every slot for the runtime is busy (workers exist): poll `GET /api/queue/:ticket?token=` → `{ state: waiting\|ready, position }`; when `ready`, repeat `POST /api/session` with `ticket` + `ticketToken` within 30 s to claim the held slot. `DELETE /api/queue/:ticket` leaves the line. `503 { deployed:false }` = no worker for that runtime at all; `503 { fits:false }` = workers exist but none can ever host the title (RAM/GPU). |
+| `GET /api/runtimes` | live capability report per worker runtime: `{ runtimes: { [rt]: { workers, capacity, active, held, free, queued, gpuWorkers, hardwareGpu, emulators:[{name,version,firmware,mock}], mock } }, sessions, auth }` |
+| `POST /api/uploads` `{ files:[{path,size,chunks[]}], title }` → `{ id, missing[], chunkSize }` | chunked upload, 4 MiB chunks, SHA-256 each. Re-declaring resumes (only missing chunks are listed). Chunks already stored anywhere are not re-sent. |
+| `PUT /api/uploads/:id/chunks/:sha` | raw chunk; must belong to the upload and match its hash |
+| `POST /api/uploads/:id/complete` → `{ id, platform, runtime, title, serial }` | the scheduler checks chunk sizes and inspects the bytes (PE header, PARAM.SFO + EBOOT, ISO 9660 SYSTEM.CNF, CHD metadata). `422` PS1-class (runs locally), `415` unsupported. Then play with `game: { runtime, upload: id }`. Uploads are owner-scoped. Requirements of uploaded console titles use platform defaults, overridable by the operator: `UPLOAD_DEFAULTS='{"ps3":{"ram":4096}}'`. |
+| `GET /api/saves` · `GET /api/saves/:game/data[?ref=]` · `POST /api/saves/:game/import` · `DELETE /api/saves/:game` | cloud save layers of the calling player (device token or `x-save-key`). Import accepts zstd/gzip save layers only. |
+| `POST /api/auth/device` `{deviceId?}` (+ `Bearer <client key>` when `CLIENT_KEYS` is set) → `{ token, deviceId, expires }` | HMAC device token; send as `x-device-token`. With `AUTH_REQUIRED=1`, sessions, uploads, package PUTs and saves require it. |
+| `GET /v1/packages/:sha` | **workers only** (worker token). Chunks may belong to other players. |
+
+Worker runtimes on the wire: `x64-win`, `x86` (Wine), `ps2` (PCSX2 profile), `ps3` (RPCS3 profile), `wasm` (legacy node).
+The console maps its kinds `p2 → ps2`, `p3 → ps3`.
+
 ICE is non-trickle: both sides finish gathering before sending SDP (one round-trip, simpler NAT story; use TURN in `ICE_SERVERS` for restrictive networks).
 
 ## Data channels (created by the console)
@@ -36,9 +53,10 @@ ICE is non-trickle: both sides finish gathering before sending SDP (one round-tr
   * `[3, button, down]` — logical button from a **controller or touch** control. PC workers map it to keys through the manifest's `controllerMap`; WASM nodes treat it like type 1.
   * `[2, buttons, x:u16, y:u16]` — pointer, normalized 0–65535 over the game picture (letterbox excluded). Buttons are the DOM bitmask (1 left, 2 right, 4 middle). PC workers move the X pointer and press X buttons; WASM nodes call the optional `mpc_pointer(x, y, buttons)` export in framebuffer pixels.
   * `[4, steps:i8]` — mouse wheel, in notches (positive = down). PC workers click X buttons 4/5.
+  * `[5, mask:u16]` — full controller state, 16 buttons in this bit order: up, down, left, right, cross, circle, square, triangle, l1, r1, l2, r2, select, start, l3, r3 (big-endian u16). Sent instead of type 3 when the worker announced `caps.pad = 'full'` (emulator workers); mapped to keys through the manifest's full-pad `controllerMap`.
   * text `k1KeyW` / `k0KeyW` — raw key down/up (`KeyboardEvent.code`) for PC titles
 * `ctl` — reliable JSON
-  * node → console: `{t:'caps', save:bool}`, `{t:'saved', id, data:base64}`, `{t:'loaded', id, ok}`, `{t:'notice', text}` (e.g. crash restart), `{t:'end', reason}`
+  * node → console: `{t:'caps', save:bool, pad?:'full'|'logical'}`, `{t:'saved', id, data:base64}`, `{t:'loaded', id, ok}`, `{t:'notice', text}` (e.g. crash restart), `{t:'end', reason}`
   * On Windows workers, `saved.data` is a reference to the cloud save layer (`{ref,size,raw,…}`), not the data itself. `load` restarts the game from that layer. The scheduler only lets a worker read saves that belong to the player and game of a session it runs.
   * console → node: `{t:'quality', height, fps, kbps}` (sent by live AIMD adaptation), `{t:'pause', on}`, `{t:'save', id}`, `{t:'load', id, data}`
 
@@ -58,6 +76,19 @@ ICE is non-trickle: both sides finish gathering before sending SDP (one round-tr
 **Worker selection (MPC).** Hard filters: alive, runtime, free slot, free RAM, Vulkan for GPU titles, not excluded.
 Score: cached game layer +50, hardware GPU (GPU titles) +30, hardware encoder +15, minus load and occupancy.
 A start failure is retried once on another worker.
+
+## Emulator game manifest (PS2/PS3-class; same validators)
+
+```json
+{ "id": "my-ps3-title", "title": "…", "type": "emulator", "platform": "ps3", "emulator": "rpcs3",
+  "boot": "GAME/PS3_GAME/USRDIR/EBOOT.BIN", "files": [ … ], "network": false,
+  "requirements": { "ram": 8192, "gpu": true, "cpus": 4 }, "display": { "width": 1280, "height": 720 },
+  "controllerMap": { "cross": "x", "circle": "c", … } }
+```
+
+`emulator` is fixed per platform (`ps2 → pcsx2`, `ps3 → rpcs3`); clients never choose a binary. `boot` must be a file of
+the game (`EBOOT.BIN` or `.iso` for ps3; `.iso/.chd/.cue` for ps2). No arguments. The worker builds the command line
+from its own `emulator.json` profile (`{binary}` + fixed flags + `{boot}`), see `cloud/worker/mishrin_worker/profiles.py`.
 
 ## Windows game manifest (validated by the scheduler *and* the worker)
 

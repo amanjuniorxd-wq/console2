@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 
 export default defineConfig({
+  // Relative base: the same build works at / and under a sub-path such as /mishrin-console/ (Gyanagi).
+  // Override with MISHRIN_BASE=/mishrin-console/ for an absolute base.
+  base: process.env.MISHRIN_BASE || './',
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   build: {
     target: 'es2022',

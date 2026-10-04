@@ -31,7 +31,7 @@ async function start() {
   const idle = (window as Window & { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200));
   idle(() => { void probe(); });
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    idle(() => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    idle(() => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
   }
 }
 

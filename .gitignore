@@ -1,0 +1,12 @@
+node_modules
+dist/
+tests/shots/
+server/.data/
+server/.cas/
+server/games/
+__pycache__/
+*.pyc
+emulators/p1/.src/
+emulators/p1/testgame/pulse.elf
+emulators/p1/testgame/pulse.raw
+cloud/test-games/*.exe

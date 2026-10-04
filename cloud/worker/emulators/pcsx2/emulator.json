@@ -1,0 +1,13 @@
+{
+ "name": "pcsx2", "runtime": "ps2", "version": "1.6.0 (Ubuntu 24.04 pcsx2:i386)",
+ "binary": "/usr/games/PCSX2",
+ "argv": ["{binary}", "--nogui", "{boot}"],
+ "home": "home",
+ "formats": ["iso", "bin"],
+ "firmware": { "label": "PS2 BIOS", "kind": "ps2-bios", "dir": ".config/PCSX2/bios",
+   "help": "A PS2 BIOS dumped by the operator from their own console (e.g. SCPH-xxxxx .bin, 4 MiB). Install: sudo python3 cloud/worker/emulators/pcsx2/setup.py /opt/mishrin/emulators/pcsx2 --bios <your-bios.bin>. Mishrin never downloads or ships a BIOS." },
+ "saves": [".config/PCSX2/memcards"],
+ "exclude": ["*.log", "*/logs/*", "*/snaps/*"],
+ "gracefulStop": { "key": "Escape", "wait": 5 },
+ "selfTest": { "argv": ["{binary}", "--nogui", "--nodisc"], "title": "^Slot: ", "seconds": 45 }
+}

@@ -48,7 +48,7 @@ export class EmulatorSession {
     this.args = a;
     const t0 = performance.now();
     const manifest = await fetch(CORES[this.platform].coreManifest!).then(r => { if (!r.ok) throw new Error('Emulator core is not installed on this server.'); return r.json(); });
-    const pkg = await getPackage({ id: `core-${this.platform}`, title: '', artwork: '', description: '', runtime: 'wasm', url: manifest.url, sha256: manifest.sha256 });
+    const pkg = await getPackage({ id: `core-${this.platform}`, title: '', artwork: '', description: '', runtime: 'wasm', url: new URL(manifest.url, new URL(CORES[this.platform].coreManifest!, location.href)).href, sha256: manifest.sha256 });
     this.timings.coreFetchMs = performance.now() - t0;
     const t1 = performance.now();
     const { module, reused } = await compiled(pkg);
@@ -96,7 +96,7 @@ export class EmulatorSession {
   private async setupAudio(): Promise<{ wire: InitOptions['audio'] } | null> {
     if (typeof AudioWorkletNode === 'undefined') return null;
     audioCtx ??= new AudioContext({ latencyHint: 'interactive' });
-    await audioCtx.audioWorklet.addModule('/emu/mishrin-audio.worklet.js');
+    await audioCtx.audioWorklet.addModule(`${import.meta.env.BASE_URL}emu/mishrin-audio.worklet.js`);
     const inRate = 44100;
     let sab: SharedArrayBuffer | undefined;
     if (self.crossOriginIsolated) sab = new SharedArrayBuffer(8 + 2 * inRate); // ~0.5 s stereo int16 ring + 2 indices

@@ -25,11 +25,21 @@ export function score(w, need) {
   return s;
 }
 
+/** Detected capabilities a runtime needs on the worker (flags come from real detection in the worker; see capabilities()).
+ *  A worker running a declared mock emulator (test double) is accepted for that runtime only via flags.mockRuntimes. */
+export const RUNTIME_NEEDS = { ps2: ['pcsx2'], ps3: ['rpcs3', 'graphics'] };
+export function capable(w, rt) {
+  const f = w.caps?.flags, needs = RUNTIME_NEEDS[rt];
+  if (!needs || !f || w.kind !== 'worker') return true;            // Windows/x86 or legacy nodes: the runtime list is authoritative
+  if ((f.mockRuntimes || []).includes(rt)) return true;
+  return needs.every(n => n === 'graphics' ? (f.vulkan || f.opengl) : !!f[n]);
+}
+
 export function selectWorker(workers, need, now = Date.now()) {
   const ok = [...workers].filter(w =>
     alive(w, now) &&
-    w.runtimes.has(need.runtime) &&
-    w.active.size < w.capacity &&
+    w.runtimes.has(need.runtime) && capable(w, need.runtime) &&
+    w.active.size + (w.holds?.size || 0) < w.capacity &&       // slots held for queued players count as taken
     !need.exclude?.has(w.id) &&
     (!need.ramMB || freeRamMB(w) >= need.ramMB) &&
     (!need.gpu || w.kind !== 'worker' || w.caps?.resources?.gpu?.available));

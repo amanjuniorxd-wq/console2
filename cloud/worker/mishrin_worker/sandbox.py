@@ -223,12 +223,12 @@ class Sandbox:
             os.makedirs(p)
             os.chown(p, self.cfg.game_uid, self.cfg.game_uid)
 
-    def mount_layers(self, runtime_prefix, game_layer):
+    def mount_layers(self, runtime_prefix, game_layer, game_sub='drive_c/Game'):
         merged = os.path.join(self.dir, 'prefix')
         _mount('-t', 'overlay', 'mishrin-prefix', '-o',
                f'lowerdir={runtime_prefix},upperdir={self.dir}/prefix-upper,workdir={self.dir}/prefix-work', merged)
         self.mounts.append(merged)
-        game_mnt = os.path.join(merged, 'drive_c', 'Game')
+        game_mnt = os.path.join(merged, *game_sub.split('/'))
         os.makedirs(game_mnt, exist_ok=True)
         _mount('-t', 'overlay', 'mishrin-game', '-o',
                f'lowerdir={game_layer},upperdir={self.dir}/game-upper,workdir={self.dir}/game-work', game_mnt)
@@ -291,7 +291,7 @@ class Sandbox:
         return None
 
     # ---------- game ----------
-    def bwrap_argv(self, inner_argv, env, chdir, pulse_sock=None):
+    def bwrap_argv(self, inner_argv, env, chdir, pulse_sock=None, extra_ro=()):
         a = ['setpriv', f'--reuid={self.cfg.game_uid}', f'--regid={self.cfg.game_uid}', '--clear-groups', '--no-new-privs', '--',
              'bwrap', '--unshare-all', '--die-with-parent', '--new-session', '--cap-drop', 'ALL',
              '--ro-bind', '/usr', '/usr', '--symlink', 'usr/bin', '/bin', '--symlink', 'usr/lib', '/lib',
@@ -308,14 +308,16 @@ class Sandbox:
             a += ['--dev-bind', node, node]
         if pulse_sock:
             a += ['--ro-bind', pulse_sock, '/tmp/pulse/native']
+        for src, dst in extra_ro:  # e.g. the emulator install (read-only, shared by all sessions)
+            a += ['--ro-bind', src, dst]
         a += ['--clearenv']
         for k, v in env.items():
             a += ['--setenv', k, v]
         a += ['--chdir', chdir, *inner_argv]
         return a
 
-    def launch(self, argv, env, chdir, pulse_sock=None, log_name='game.log'):
-        cmd = self.bwrap_argv(argv, env, chdir, pulse_sock)
+    def launch(self, argv, env, chdir, pulse_sock=None, log_name='game.log', extra_ro=()):
+        cmd = self.bwrap_argv(argv, env, chdir, pulse_sock, extra_ro)
         task_files = self.cg.task_files()
 
         def enter_limits():
@@ -327,7 +329,9 @@ class Sandbox:
                     pass
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_NOFILE, (8192, 8192))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (self.limits['storageMB'] << 20,) * 2)
+            # largest single file: the storage budget, or more for emulators that map sparse guest-memory files
+            # (RPCS3 reserves its PS3 address space through a multi-GiB memfd; disk usage is still capped by storage)
+            resource.setrlimit(resource.RLIMIT_FSIZE, (max(self.limits['storageMB'], self.limits.get('fileMB', 0)) << 20,) * 2)
 
         log = open(os.path.join(self.dir, log_name), 'ab')
         p = SPAWNER.call(lambda: subprocess.Popen(cmd, stdout=log, stderr=log, stdin=subprocess.DEVNULL, preexec_fn=enter_limits, start_new_session=True))

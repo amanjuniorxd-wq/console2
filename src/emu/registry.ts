@@ -8,19 +8,19 @@ export const CORES: Record<Platform, CoreDescriptor> = {
     formats: ['CUE+BIN', 'BIN', 'IMG', 'ISO', 'CHD (v5)', 'PBP', 'PS-X EXE', 'M3U'],
     summary: 'PlayStation-1-class consoles. Runs locally in a WebAssembly worker; your files never leave this device.',
     license: 'PCSX-ReARMed core — GPL-2.0-or-later (source and notice: /cores/p1/)',
-    coreManifest: '/cores/p1/core.json',
+    coreManifest: `${import.meta.env?.BASE_URL ?? "./"}cores/p1/core.json`, // env is absent when bundled for Node tests
   },
   p2: {
     id: 'p2', name: 'Mishrin P2', status: 'experimental', available: false,
     formats: ['ISO (DVD)', 'CHD (DVD)'],
-    summary: 'PlayStation-2-class consoles. Detected, not runnable in this build.',
-    reason: 'Not in this build. The viable candidate (Play!, BSD-2-Clause) has an upstream experimental WebAssembly build, but it needs Emscripten 4 to compile, WebAssembly threads (SharedArrayBuffer + cross-origin isolation) and WebGL2, and its browser compatibility is limited. See docs/EMULATION.md.',
+    summary: 'PlayStation-2-class consoles. In development: cloud worker profile (PCSX2) built and tested with a mock emulator; no local core.',
+    reason: 'Local: not in this build (Play! WebAssembly needs Emscripten 4, WASM threads + cross-origin isolation). Cloud: real PCSX2 1.6 on a worker (verified with the Mishrin test ROM + test disc); games need your own PS2 BIOS on the worker. See docs/universal-runtime-architecture.md.',
   },
   p3: {
     id: 'p3', name: 'Mishrin P3', status: 'research', available: false,
     formats: ['Disc folder / ISO', 'PKG'],
-    summary: 'PlayStation-3-class consoles. Research only.',
-    reason: 'Requires JIT recompilation of Cell PPU/SPU code and a modern GPU API at speeds WebAssembly cannot reach today. Not implemented.',
+    summary: 'PlayStation-3-class consoles. Cloud only: real RPCS3 on a worker; games need your own PS3 system software there.',
+    reason: 'A browser cannot run Cell PPU/SPU code at speed. The cloud path runs real RPCS3 on a worker (verified with the Mishrin test program: video, audio, controller, saves); commercial games need PS3 system software from your own console, installed by the operator.',
   },
   p4: {
     id: 'p4', name: 'Mishrin P4', status: 'research', available: false,

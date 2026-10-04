@@ -1,0 +1,9 @@
+{
+ "name": "rpcs3", "runtime": "ps3", "version": "mock-1", "mock": true,
+ "binary": "mock-emulator",
+ "argv": ["{binary}", "--mode=ps3", "{boot}"],
+ "home": "home",
+ "firmware": { "label": "PS3 system software (mock)", "required": [".config/rpcs3/dev_flash/vsh/module/vsh.self"] },
+ "saves": [".config/rpcs3/dev_hdd0/home"],
+ "exclude": ["*.keep"]
+}

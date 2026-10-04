@@ -1,0 +1,280 @@
+{
+ "suite": "REAL_EMULATOR_TEST ps2",
+ "emulator": "PCSX2 1.6.0",
+ "image": "Mishrin test ROM + Mishrin test disc (original)",
+ "passed": 24,
+ "total": 24,
+ "results": [
+  [
+   "worker self-test: real PCSX2 booted the test ROM and rendered a frame before the worker registered",
+   true
+  ],
+  [
+   "BIOS check: Mishrin test ROM recognised as a test ROM (not a console BIOS) \u2192 BIOS_REQUIRED + test mode, never READY",
+   true
+  ],
+  [
+   "worker without BIOS: PCSX2 installed, BIOS_REQUIRED, PS2 not offered to the scheduler",
+   true
+  ],
+  [
+   "worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/rpcs3)",
+   true
+  ],
+  [
+   "console runtime status: PS2 \"Real emulator \u00b7 PS2 BIOS required\" (test mode), with exact setup instructions",
+   true
+  ],
+  [
+   "detector: test disc identified as PS2-class from SYSTEM.CNF/BOOT2 (content, not extension)",
+   true
+  ],
+  [
+   "PCSX2 session on the BIOS-equipped worker, scheduled automatically (no emulator chosen by the browser)",
+   true
+  ],
+  [
+   "test image loaded: ROM read GAME.DAT from the disc through the emulated CDVD (disc square green, box in the disc colour)",
+   true
+  ],
+  [
+   "browser receives rendered frames of the running game",
+   true
+  ],
+  [
+   "D-pad, face buttons, shoulders, triggers, Select, L3/R3 reach the game (indicator lit in the streamed frame)",
+   true
+  ],
+  [
+   "game responds: held D-pad moves the box, CROSS raises the score bar",
+   true
+  ],
+  [
+   "analog sticks reach the game (left stick \u2192 LX marker right, right stick \u2192 RY marker up)",
+   true
+  ],
+  [
+   "input latency measured (gamepad press \u2192 reacting frame decoded in the browser)",
+   true
+  ],
+  [
+   "video stream metrics (resolution, fps, encoder, encode latency, RTT, dropped frames)",
+   true
+  ],
+  [
+   "audio: the ROM's 857 Hz SPU2 tone (PCSX2 SPU2-X \u2192 session PulseAudio \u2192 Opus \u2192 WebRTC) decoded in the browser",
+   true
+  ],
+  [
+   "START saves to the emulated memory card (ROM reports DONE)",
+   true
+  ],
+  [
+   "clean termination: PCSX2 closed, sandbox/mounts removed",
+   true
+  ],
+  [
+   "final save captured the flushed memory card after the graceful close",
+   true
+  ],
+  [
+   "restart restores the save: memory card loaded, box position equals the saved one",
+   true
+  ],
+  [
+   "second session ends cleanly",
+   true
+  ],
+  [
+   "CHD detected as PS2-class but refused: PCSX2 1.6 on this cloud reads ISO/BIN only (convert hint shown)",
+   true
+  ],
+  [
+   "only a BIOS-less PCSX2 worker: \"PS2 BIOS required\" setup screen (what to provide, how, nothing downloaded)",
+   true
+  ],
+  [
+   "upload/play refused while the BIOS is missing (no fake session)",
+   true
+  ],
+  [
+   "no uncaught console errors",
+   true
+  ]
+ ],
+ "timings": {
+  "workerStartToRegisteredMs": 19652,
+  "selfTestEmulatorStartMs": 1324,
+  "selfTestFirstFrameMs": 1337,
+  "uploadMs": 200,
+  "allocationAndLaunchMs": 6469,
+  "firstFrameBrowserMs": 6920,
+  "gameLoadedBrowserMs": 6958,
+  "worker": {
+   "layerMs": 42,
+   "sandboxMs": 322,
+   "emulatorWindowMs": 755,
+   "streamSetupMs": 2659,
+   "totalMs": 3800
+  },
+  "shutdownMs": 2207,
+  "restartToRestoredMs": 7222
+ },
+ "metrics": {
+  "gsArea": {
+   "x0": 24,
+   "y0": 0,
+   "sx": 0.9,
+   "sy": 0.9642857142857143
+  },
+  "buttonTrace": [
+   [
+    "up",
+    225,
+    [
+     319,
+     176
+    ]
+   ],
+   [
+    "down",
+    205,
+    [
+     318,
+     247
+    ]
+   ],
+   [
+    "left",
+    209,
+    [
+     288,
+     252
+    ]
+   ],
+   [
+    "right",
+    203,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "cross",
+    244,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "circle",
+    123,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "square",
+    101,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "triangle",
+    144,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "l1",
+    179,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "r1",
+    173,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "l2",
+    261,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "r2",
+    233,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "select",
+    282,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "l3",
+    208,
+    [
+     343,
+     252
+    ]
+   ],
+   [
+    "r3",
+    251,
+    [
+     343,
+     252
+    ]
+   ]
+  ],
+  "inputRoundTripMs": {
+   "median": 208,
+   "min": 101,
+   "max": 282,
+   "n": 15
+  },
+  "video": {
+   "resolution": "640x480",
+   "browserFps": 39,
+   "workerFps": 11,
+   "codec": "VP8",
+   "encoder": "vp8enc",
+   "hardwareEncoder": false,
+   "encodeMs": 60,
+   "networkRttMs": 0,
+   "jitterBufferMs": 22.3,
+   "framesDecoded": 719,
+   "framesDropped": 0,
+   "packetsLost": 0,
+   "pcsx2Window": "Slot: 0 | Speed:  92% (55.14) | Unknown | Limiter: Normal | GSdx OGL HW | 640x448 | Automatic | Interlaced | EE:  23% | "
+  },
+  "audio": {
+   "codec": "audio/opus",
+   "packets": 2172,
+   "decodedRms": 0.0242,
+   "peakHz": 856
+  }
+ }
+}

@@ -1,0 +1,27 @@
+# Reference layout: each tier scales independently. NOT exercised in this repository's CI — adapt to your platform.
+# frontend (static) · broker (API + scheduler) · storage (volume or object store) · workers (one per GPU host)
+services:
+  frontend:
+    image: nginx:1.27-alpine
+    volumes: ["../dist:/srv/mishrin-console:ro", "./nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    ports: ["80:80"]
+    depends_on: [broker]
+  broker:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "server/broker.mjs"]
+    volumes: ["../server:/app/server:ro", "mishrin-data:/data", "mishrin-cas:/cas"]
+    environment:
+      PORT: "8787"
+      DATA_DIR: /data
+      CAS_DIR: /cas                 # content-addressed storage (swap for an object-store backend: server/lib/storage.mjs)
+      GAMES_DIR: /data/games
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      CLIENT_KEYS: ${CLIENT_KEYS:-}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-0}
+      ICE_SERVERS: ${ICE_SERVERS:-[]}
+# GPU workers run on GPU hosts as root (mounts, cgroups, bubblewrap) — see docs/WINDOWS-CLOUD.md:
+#   sudo python3.12 -m mishrin_worker --scheduler https://<host>/mishrin-api --token $WORKER_TOKEN --emulators /opt/mishrin/emulators
+volumes: { mishrin-data: {}, mishrin-cas: {} }
