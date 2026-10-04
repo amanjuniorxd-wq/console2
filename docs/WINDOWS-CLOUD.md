@@ -75,6 +75,7 @@ with anti-cheat or DRM, kernel drivers, or online-only launchers. Those are out 
 sudo dpkg --add-architecture i386 && sudo apt update
 sudo apt install wine64 wine32:i386 bubblewrap xserver-xorg-core xserver-xorg-video-dummy xauth pulseaudio \
   gstreamer1.0-plugins-{base,good,bad,ugly} gstreamer1.0-nice gstreamer1.0-x gstreamer1.0-pulseaudio \
+  7zip \
   python3-gi gir1.2-gst-plugins-bad-1.0 python3-xlib mesa-vulkan-drivers mesa-vulkan-drivers:i386 vulkan-tools zstd
 # DXVK + VKD3D-Proton releases unpacked to /opt/mishrin/layers/{dxvk-2.6.1,vkd3d-proton-2.14.1}
 sudo useradd -r -u 20000 -M -s /usr/sbin/nologin mishrin-game
@@ -88,6 +89,10 @@ node cloud/tools/pack.mjs ./MyGame ./my-game.json --scheduler http://SCHEDULER:8
 ```
 
 Then add a catalog entry with `"runtime": "x64-win", "url": "cloud:<id>"` and set Settings → Cloud Gaming → Endpoint.
+
+## Windows archive uploads
+
+Large Windows games should preferably be uploaded as one `.zip` or `.rar` archive. The browser uploads the archive as a single content-addressed file, avoiding browser file-count limits. The worker uses 7-Zip to extract it into the per-session game layer and recursively scans the extracted tree for supported x86/x64 PE `.exe` files, selecting the most likely launcher automatically. Current archive extraction requires an unencrypted ZIP/RAR and `7z` installed on every Windows worker. 7-Zip supports unpacking ZIP and RAR, including RAR5 in current releases. citeturn1search0turn1search5
 
 ## Known limitations
 
