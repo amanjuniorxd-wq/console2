@@ -81,28 +81,51 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
 export async function expandGameFiles(input: FileList | File[]): Promise<UploadFile[]> {
   const selected = Array.from(input || []);
   if (!selected.length) throw new Error('Choose a Windows game folder or ZIP file.');
-  const zips = selected.filter(f => /\.zip$/i.test(f.name));
-  if (zips.length > 1 || (zips.length && selected.length > 1)) throw new Error('Choose one ZIP file, or select a game folder — not both.');
+
+  const zips = selected.filter(f => f.name.toLowerCase().endsWith('.zip'));
+  if (zips.length > 1 || (zips.length > 0 && selected.length > 1)) {
+    throw new Error('Choose one ZIP file, or select a game folder — not both.');
+  }
+
   if (zips.length === 1) {
     const zip = zips[0];
     const raw = new Uint8Array(await zip.arrayBuffer());
     let entries: Record<string, Uint8Array>;
-    try { entries = unzipSync(raw); } catch { throw new Error('The ZIP file could not be opened.'); }
+    try {
+      entries = unzipSync(raw);
+    } catch {
+      throw new Error('The ZIP file could not be opened.');
+    }
+
     const out: UploadFile[] = [];
     for (const [name, bytes] of Object.entries(entries)) {
-      const path = name.replaceAll('\\\\', '/').replace(/^\\/+/, '');
+      const path = name.split('\\').join('/').replace(/^\/+/, '');
       if (!path || path.endsWith('/') || path.startsWith('__MACOSX/')) continue;
+
       const parts = path.split('/');
       if (parts.some(p => !p || p === '.' || p === '..')) continue;
-      out.push({ path, blob: new File([bytes], parts[parts.length - 1] || 'file') });
+
+      out.push({
+        path,
+        blob: new File([bytes], parts[parts.length - 1] || 'file')
+      });
     }
+
     if (!out.length) throw new Error('The ZIP contains no usable files.');
     return out;
   }
-  const out = selected.map((f, i) => {
-    const path = String((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name || `file-${i}`);
-    return { path: path.replaceAll('\\\\', '/'), blob: f };
-  }).filter(f => f.path && !f.path.endsWith('/'));
+
+  const out = selected
+    .map((f, i) => {
+      const path = String(
+        (f as File & { webkitRelativePath?: string }).webkitRelativePath ||
+        f.name ||
+        `file-${i}`
+      );
+      return { path: path.split('\\').join('/'), blob: f };
+    })
+    .filter(f => f.path && !f.path.endsWith('/'));
+
   if (!out.length) throw new Error('The selected folder contains no files.');
   return out;
 }
