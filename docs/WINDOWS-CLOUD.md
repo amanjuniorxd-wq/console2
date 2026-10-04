@@ -92,7 +92,7 @@ Then add a catalog entry with `"runtime": "x64-win", "url": "cloud:<id>"` and se
 
 ## Windows archive uploads
 
-Large Windows games should preferably be uploaded as one `.zip` or `.rar` archive. The browser uploads the archive as a single content-addressed file, avoiding browser file-count limits. The worker uses 7-Zip to extract it into the per-session game layer and recursively scans the extracted tree for supported x86/x64 PE `.exe` files, selecting the most likely launcher automatically. Current archive extraction requires an unencrypted ZIP/RAR and `7z` installed on every Windows worker. 7-Zip supports unpacking ZIP and RAR, including RAR5 in current releases. citeturn1search0turn1search5
+Large Windows games should preferably be uploaded as one `.zip` or `.rar` archive. The browser uploads the archive as a single content-addressed file, avoiding browser file-count limits. The worker uses 7-Zip to extract it into the per-session game layer and recursively scans the extracted tree for supported x86/x64 PE `.exe` files, selecting the most likely launcher automatically. Current archive extraction requires an unencrypted ZIP/RAR and `7z` installed on every Windows worker. 7-Zip supports unpacking ZIP and RAR, including RAR5 in current releases.
 
 ## Known limitations
 
