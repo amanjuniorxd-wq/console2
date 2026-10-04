@@ -87,10 +87,23 @@ export function inspectUpload(files, store) {
     if (!p) throw new InspectError('PARAM.SFO is damaged.', 422);
     return { platform: 'ps3', boot: eboot.path, title: p.TITLE || '', serial: p.TITLE_ID || '', category: p.CATEGORY || '' };
   }
+  // Windows games are packages, not single files. Inspect every .exe candidate and
+  // choose a deterministic launch executable: title/root matches first, then largest PE.
+  const peCandidates = [];
+  for (const f of files) {
+    if (!/\.exe$/i.test(f.path)) continue;
+    const pe = peInfo(reader(f).read(0, 4096));
+    if (pe) peCandidates.push({ path: f.path, arch: pe.arch, size: f.size });
+  }
+  if (peCandidates.length) {
+    const root = peCandidates.filter(x => !x.path.includes('/'));
+    const titleHint = String(files[0]?.path || '').split('/')[0].replace(/\.(zip|exe)$/i, '').toLowerCase();
+    const score = x => (root.includes(x) ? 1000 : 0) + (titleHint && x.path.toLowerCase().includes(titleHint) ? 500 : 0) + Math.min(100, Math.floor(x.size / 1048576));
+    peCandidates.sort((a, b) => score(b) - score(a) || b.size - a.size || a.path.localeCompare(b.path));
+    return { platform: 'windows', arch: peCandidates[0].arch, executable: peCandidates[0].path, executables: peCandidates.slice(0, 32), title: '' };
+  }
   if (files.length === 1) {
     const f = files[0], r = reader(f), head = r.read(0, 4096);
-    const pe = peInfo(head);
-    if (pe) return { platform: 'windows', arch: pe.arch, title: '' };
     if (head.subarray(0, 4).equals(Buffer.from([0x7f, 0x50, 0x4b, 0x47]))) throw new InspectError('PS3 PKG files must be installed by the emulator first; PKG upload is not supported yet. Upload the game folder or disc image instead.');
     if (head.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) throw new InspectError('Linux executables have no cloud worker yet.');
     if (ascii(head.subarray(0, 8)) === 'MComprHD') {
