@@ -107,13 +107,26 @@ export function validateManifest(m, { allowNetwork = false } = {}) {
   if (m.runtime !== 'wine') fail('runtime must be "wine"');
   const out = { id: m.id, title: String(m.title || m.id).slice(0, 80), type: 'windows', runtime: 'wine' };
   const seen = validateFiles(m, out);
-  const exe = relPath(m.executable, 'executable');
-  if (!exe.toLowerCase().endsWith('.exe')) fail('executable must be a .exe');
-  if (!seen.has(exe.toLowerCase())) fail('executable is not part of the game files');
-  out.executable = exe;
-  const wd = relPath(m.workingDirectory ?? (exe.includes('/') ? exe.slice(0, exe.lastIndexOf('/')) : ''), 'workingDirectory', true);
-  if (wd && ![...seen].some(p => p.startsWith(wd.toLowerCase() + '/'))) fail('workingDirectory does not exist in the game');
-  out.workingDirectory = wd;
+  const isArchive = m.archive && typeof m.archive === 'object';
+  if (isArchive) {
+    const format = String(m.archive.format || '');
+    if (!['zip', 'rar'].includes(format)) fail('archive.format must be zip or rar');
+    const archivePath = relPath(m.archive.path, 'archive.path');
+    if (!seen.has(archivePath.toLowerCase())) fail('archive.path is not part of the game files');
+    out.archive = { path: archivePath, format };
+  }
+  const exe = relPath(m.executable, 'executable', !!isArchive);
+  if (isArchive && exe === '') {
+    out.executable = '__AUTO__';
+    out.workingDirectory = '';
+  } else {
+    if (!exe.toLowerCase().endsWith('.exe')) fail('executable must be a .exe');
+    if (!seen.has(exe.toLowerCase())) fail('executable is not part of the game files');
+    out.executable = exe;
+    const wd = relPath(m.workingDirectory ?? (exe.includes('/') ? exe.slice(0, exe.lastIndexOf('/')) : ''), 'workingDirectory', true);
+    if (wd && ![...seen].some(p => p.startsWith(wd.toLowerCase() + '/'))) fail('workingDirectory does not exist in the game');
+    out.workingDirectory = wd;
+  }
   const args = m.args ?? [];
   if (!Array.isArray(args) || args.length > 16 || !args.every(a => typeof a === 'string' && ARG.test(a))) fail('args must be up to 16 plain strings');
   out.args = [...args];
