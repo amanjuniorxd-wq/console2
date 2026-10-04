@@ -66,7 +66,7 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
     const setBar = (f: number, text = '') => { bar.hidden = false; (bar.firstElementChild as HTMLElement).style.width = `${Math.round(f * 100)}%`; if (text) { prog.hidden = false; prog.textContent = text; } };
     const disabled = (label: string) => { const b = h('button', 'btn', label); b.disabled = true; acts.append(b); };
 
-    if (d.kind === 'browser-wasm' || d.kind === 'browser-html' || d.kind === 'windows-exe') {
+    if (d.kind === 'browser-wasm' || d.kind === 'browser-html') {
       const add = h('button', 'btn btn-play', `${ic.plus}Add to Library`);
       acts.append(add); focusEl(add);
       if (d.kind === 'windows-exe') acts.insertAdjacentHTML('beforeend', `<p class="note">Windows games stream from your cloud: the .exe is uploaded (chunked, deduplicated) when you first press Play.</p>`);
