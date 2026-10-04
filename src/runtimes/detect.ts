@@ -77,6 +77,31 @@ export async function detectAny(input: File[]): Promise<UniversalDetection> {
     return { ...res, ok: true, platform: 'ps3', runtime: 'ps3-cloud', kind: 'ps3-folder', format: 'folder', title: String(sfo.TITLE || prefix.replace(/\/$/, '') || 'PS3 game'), serial: String(sfo.TITLE_ID || '') };
   }
 
+  // Windows game folders contain many DLL/data/assets files. Detect PE executables
+  // across the complete selection before falling back to disc-image detection.
+  const peCandidates: { index: number; arch: 'x64' | 'x86'; path: string; size: number }[] = [];
+  for (let i = 0; i < files.length; i++) {
+    if (!/\.exe$/i.test(paths[i])) continue;
+    const arch = peArch(await head(files[i], 4096));
+    if (arch) peCandidates.push({ index: i, arch, path: paths[i], size: files[i].size });
+  }
+  if (peCandidates.length) {
+    const root = peCandidates.filter(x => !x.path.includes('/'));
+    const titleHint = (paths[0]?.split('/')[0] || '').replace(/\.(zip|exe)$/i, '').toLowerCase();
+    const score = (x: typeof peCandidates[number]) =>
+      (root.includes(x) ? 1000 : 0) +
+      (titleHint && x.path.toLowerCase().includes(titleHint) ? 500 : 0) +
+      Math.min(100, Math.floor(x.size / 1048576));
+    peCandidates.sort((a, b) => score(b) - score(a) || b.size - a.size || a.path.localeCompare(b.path));
+    const chosen = peCandidates[0];
+    return {
+      ...res, ok: true, platform: 'windows', runtime: 'windows-cloud', kind: 'windows-exe',
+      format: 'windows-folder', arch: chosen.arch,
+      title: titleHint || chosen.path.split('/').pop()?.replace(/\.exe$/i, '') || 'Windows game',
+      warnings: peCandidates.length > 1 ? [`Found ${peCandidates.length} Windows executables; selected ${chosen.path}.`] : []
+    };
+  }
+
   if (files.length === 1) {
     const f = files[0], h = await head(f, 4096);
     if (h[0] === 0 && h[1] === 0x61 && h[2] === 0x73 && h[3] === 0x6d) return { ...res, ok: true, platform: 'browser', runtime: 'browser', kind: 'browser-wasm', format: 'wasm', title: f.name.replace(/\.[^.]+$/, '') };
