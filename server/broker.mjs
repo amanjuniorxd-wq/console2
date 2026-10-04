@@ -390,8 +390,8 @@ function completeUpload(u) {
   const manifest = info.platform === 'windows'
     ? validateManifest({
         id: mid, title, type: 'windows', runtime: 'wine',
-        executable: info.executable, files: u.files, arch: info.arch, network: false, graphics: 'auto',
-        requirements: { ram: 2048, gpu: true, maxMinutes: 240 }
+        executable: info.executable, files: u.files, arch: info.arch || 'auto', archive: info.archive, network: false, graphics: 'auto',
+        requirements: { ram: 2048, gpu: true, storageMB: Math.min(262144, Math.max(2048, Math.ceil(u.files.reduce((n, f) => n + f.size, 0) * 1.5 / 1048576))), maxMinutes: 240 }
       })
     : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files: u.files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}), ...(PLATFORM_DISPLAY[info.platform] ? { display: PLATFORM_DISPLAY[info.platform] } : {}) });
   const rec = { id: u.id, owner: u.owner, manifest, platform: info.platform, runtime: runtimeOf(manifest), title, serial: info.serial || '', created: Date.now() };
