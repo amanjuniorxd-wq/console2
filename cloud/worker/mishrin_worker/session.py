@@ -3,6 +3,10 @@ with watchdog, saves and cleanup."""
 import base64
 import json
 import os
+import re
+import shutil
+import struct
+import subprocess
 import threading
 import time
 import traceback
@@ -70,6 +74,7 @@ class Session:
             n = savelayer.restore(blob, self.sb.dir, cfg.game_uid)
             self.log(f'restored save layer ({n} files)')
         self.sb.mount_layers(prefix, layer, self.profile.game_mount)
+        self._prepare_archive(layer)
         self.state = 'launching'
         self.sb.start_display(*self.screen)
         # MISHRIN_AUDIO=silence: diagnostic/headless mode — stream generated silence instead of the game's audio
@@ -90,6 +95,75 @@ class Session:
         threading.Thread(target=self._watchdog, name=f'watchdog-{self.id[:8]}', daemon=True).start()
         self.log(f'streaming {self.stream.codec} via {self.stream.encoder} ({"hardware" if self.stream.hw else "software"}) in {time.time() - self.started:.1f}s')
         return self.stream.answer
+
+    def _prepare_archive(self, layer):
+        """Extract an uploaded ZIP/RAR into the writable game layer and find its real Windows EXE."""
+        archive = self.manifest.get('archive')
+        if not archive:
+            return
+        tool = shutil.which('7z') or shutil.which('7zz') or shutil.which('7za')
+        if not tool:
+            raise RuntimeError('Archive support is not installed on this worker (7-Zip/7z is required for ZIP and RAR games).')
+        rel = archive['path']
+        src = os.path.realpath(os.path.join(layer, *rel.split('/')))
+        upper = os.path.realpath(os.path.join(self.sb.dir, 'game-upper'))
+        if not src.startswith(os.path.realpath(layer) + os.sep):
+            raise RuntimeError('archive path escapes the game layer')
+        if not os.path.isfile(src):
+            raise RuntimeError(f'archive file is missing: {rel}')
+        os.makedirs(upper, exist_ok=True)
+        self.log(f'extracting {archive["format"].upper()} archive with 7-Zip')
+        try:
+            subprocess.run([tool, 'x', '-y', '-aoa', src, f'-o{upper}'],
+                           check=True, timeout=900, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('archive extraction timed out')
+        except subprocess.CalledProcessError as e:
+            detail = (e.stdout or '').strip().splitlines()[-1:]
+            raise RuntimeError(f'could not extract {archive["format"].upper()} archive' + (f': {detail[0]}' if detail else ''))
+        for root, dirs, names in os.walk(upper, followlinks=False):
+            for name in dirs + names:
+                p = os.path.join(root, name)
+                if os.path.islink(p) or not os.path.realpath(p).startswith(upper + os.sep):
+                    raise RuntimeError('archive contains an unsafe link/path')
+        candidates = []
+        for root, _, names in os.walk(upper):
+            for name in names:
+                if not name.lower().endswith('.exe'):
+                    continue
+                p = os.path.join(root, name)
+                try:
+                    with open(p, 'rb') as f:
+                        h = f.read(4096)
+                    if len(h) < 64 or h[:2] != b'MZ':
+                        continue
+                    off = struct.unpack_from('<I', h, 0x3c)[0]
+                    if off + 6 > len(h) or h[off:off + 4] != b'PE\0\0':
+                        continue
+                    machine = struct.unpack_from('<H', h, off + 4)[0]
+                    if machine not in (0x14c, 0x8664):
+                        continue
+                    relp = os.path.relpath(p, upper).replace(os.sep, '/')
+                    candidates.append((relp, os.path.getsize(p), machine))
+                except OSError:
+                    continue
+        if not candidates:
+            raise RuntimeError('Archive was extracted, but no supported 32/64-bit Windows .exe was found.')
+        title = str(self.manifest.get('title') or '').lower()
+        def score(x):
+            path, size, _ = x
+            return (1000 if '/' not in path else 0) + (500 if title and title in path.lower() else 0) + min(100, size // (1024 * 1024))
+        candidates.sort(key=lambda x: (-score(x), -x[1], x[0].lower()))
+        exe = candidates[0][0]
+        self.manifest['executable'] = exe
+        self.manifest['workingDirectory'] = exe.rsplit('/', 1)[0] if '/' in exe else ''
+        machine = candidates[0][2]
+        self.manifest['arch'] = 'x86' if machine == 0x14c else 'x64'
+        for root, dirs, names in os.walk(upper):
+            for name in dirs + names:
+                os.chown(os.path.join(root, name), self.w.cfg.game_uid)
+            os.chown(root, self.w.cfg.game_uid)
+        self.log(f'archive search found {exe} ({self.manifest["arch"]}); {len(candidates)} executable candidate(s)')
 
     def _launch_game(self):
         # argv only — the executable/boot file comes from the validated manifest and the worker's own profile, never from the browser.
@@ -212,7 +286,9 @@ class Session:
             self.sb.unmount_layers()
             self.sb.reset_uppers()
             savelayer.restore(blob, self.sb.dir, self.w.cfg.game_uid)
-            self.sb.mount_layers(self.profile.current_layer(), self.w.store.layer_path(self.layer_hash), self.profile.game_mount)
+            layer = self.w.store.layer_path(self.layer_hash)
+            self.sb.mount_layers(self.profile.current_layer(), layer, self.profile.game_mount)
+            self._prepare_archive(layer)
             self._launch_game()
             self._wait_window(self.w.cfg.window_timeout)
             self.state = 'streaming'
