@@ -26,7 +26,7 @@ export interface Session {
   padInput?(b: Btn, down: boolean): void;
   /** Full controller state from the unified input layer (16-button mask, src/input/pad.ts FULL order). When present,
    *  the player delivers the gamepad here instead of as logical buttons. */
-  padState?(full: number): void;
+  padState?(full: number, raw?: number, axes?: [number, number, number, number]): void;
   /** Raw keyboard (KeyboardEvent.code) and normalized pointer, for PC titles on cloud nodes. */
   rawKey?(code: string, down: boolean): void;
   /** Mouse/pointer. Absolute: normalized 0..1 inside the game picture (letterbox excluded). DOM `buttons` bitmask. */

@@ -41,9 +41,9 @@ export const RUNTIMES: RuntimeDescriptor[] = [
   { id: 'mishrin-p1', name: 'Mishrin P1', platform: 'ps1', platformLabel: 'PS1-class', where: ['local'], engine: 'PCSX-ReARMed → WebAssembly (GPL-2.0)',
     maturity: 'ready', serves: ['p1'], formats: ['CUE+BIN', 'BIN', 'ISO', 'CHD', 'PBP', 'EXE', 'M3U'], userFiles: 'Your own game discs; optional BIOS (an open HLE BIOS is built in).',
     note: 'Runs locally; your files never leave this device.', tests: 'tests/emu/*' },
-  { id: 'ps2', name: 'Mishrin P2', platform: 'ps2', platformLabel: 'PS2-class', where: ['local', 'cloud'], engine: 'Cloud: PCSX2 worker profile · Local: not built',
+  { id: 'ps2', name: 'Mishrin P2', platform: 'ps2', platformLabel: 'PS2-class', where: ['local', 'cloud'], engine: 'Cloud: PCSX2 1.6 on a worker · Local: not built',
     maturity: 'in-development', serves: ['p2'], cloudRuntimes: ['ps2'], formats: ['ISO', 'CHD', 'CUE+BIN'], userFiles: 'Your own discs and your own PS2 BIOS (installed on the worker by its operator).',
-    note: 'Detection, upload, scheduling and the worker profile exist and are tested with a mock emulator. No real PS2 emulator has been run here.', tests: 'tests/cloud/universal.test.mjs · tests/cloud/e2e_windows.py (mock)' },
+    note: 'Real PCSX2 runs on cloud workers, verified end to end with original Mishrin test software (video, audio, full controller, memory-card saves). Games need a PS2 BIOS from your own console, installed on the worker by its operator.', tests: 'tests/real/e2e_real_ps2.py (REAL_EMULATOR_TEST) · tests/cloud/e2e_windows.py (mock)' },
   { id: 'ps3-cloud', name: 'Mishrin P3 Cloud', platform: 'ps3', platformLabel: 'PS3-class', where: ['cloud'], engine: 'RPCS3 on a GPU worker',
     maturity: 'architecture-ready', serves: ['p3'], cloudRuntimes: ['ps3'], formats: ['Game folder (PS3_GAME)', 'ISO'], userFiles: 'Your own games and your own PS3 system software (installed on the worker by its operator).',
     note: 'Architecture ready, runtime not deployed: session API, scheduling, queueing, isolation, input, saves and streaming are implemented and tested with a mock RPCS3.', tests: 'tests/cloud/universal.test.mjs · tests/cloud/test_worker.py · tests/cloud/e2e_windows.py (mock)' },
@@ -61,11 +61,15 @@ export function descriptorFor(g: Pick<Game, 'runtime'>): RuntimeDescriptor | nul
 }
 
 // ------------------------------------------------------------------ live state
-export interface CloudRuntimeReport { runtime: string; workers: number; capacity: number; active: number; free: number; queued: number; mock: boolean; emulators: { name: string; version: string; firmware: boolean; mock: boolean }[] }
+export type EmulatorState = 'READY' | 'NOT_VERIFIED' | 'INSTALLATION_REQUIRED' | 'FIRMWARE_REQUIRED' | 'BIOS_REQUIRED' | 'ERROR' | 'MOCK';
+export interface CloudEmulator { name: string; version: string; firmware: boolean; mock: boolean; status?: EmulatorState; firmwareLabel?: string; requires?: string;
+  testMode?: boolean; advertised?: boolean; worker?: string; formats?: string[]; verified?: { ok: boolean; firstFrameMs: number | null; detail: string } }
+export interface CloudRuntimeReport { runtime: string; workers: number; capacity: number; active: number; free: number; queued: number; mock: boolean; emulators: CloudEmulator[] }
 export interface CloudReport { runtimes: Record<string, CloudRuntimeReport>; sessions: number; auth: { required: boolean } }
 
-export type LiveState = 'available' | 'busy' | 'mock-only' | 'not-deployed' | 'no-cloud' | 'unsupported' | 'unavailable';
-export interface LiveStatus { state: LiveState; label: string; detail: string; ok: boolean }
+export type LiveState = 'available' | 'busy' | 'test-mode' | 'mock-only' | 'not-deployed' | 'no-cloud' | 'unsupported' | 'unavailable'
+  | 'installation-required' | 'firmware-required' | 'not-verified' | 'error';
+export interface LiveStatus { state: LiveState; label: string; detail: string; ok: boolean; requires?: string }
 
 /** Combine maturity + live checks into what the UI shows. `cloud` is null when no endpoint is configured or reachable. */
 export function liveStatus(d: RuntimeDescriptor, caps: Pick<Caps, 'wasm' | 'webgpu'>, cloud: CloudReport | null | undefined, cloudConfigured: boolean, p1Core = true): LiveStatus {
@@ -79,11 +83,34 @@ export function liveStatus(d: RuntimeDescriptor, caps: Pick<Caps, 'wasm' | 'webg
   if (!cloudConfigured) return { state: 'no-cloud', label: 'No cloud', detail: 'Add your cloud endpoint in Settings → Cloud Gaming.', ok: false };
   if (!cloud) return { state: 'unavailable', label: 'Cloud unreachable', detail: 'The cloud endpoint did not answer.', ok: false };
   const reps = d.cloudRuntimes.map(r => cloud.runtimes[r]).filter(Boolean) as CloudRuntimeReport[];
-  if (!reps.length) return { state: 'not-deployed', label: d.maturity === 'ready' ? 'No workers' : 'Not deployed', detail: `No ${d.platformLabel} worker is deployed on this cloud.`, ok: false };
-  const real = reps.filter(r => r.emulators.some(e => !e.mock) || (!r.mock && !r.emulators.length));
-  const free = reps.reduce((a, r) => a + r.free, 0), queued = reps.reduce((a, r) => a + r.queued, 0), workers = reps.reduce((a, r) => a + r.workers, 0);
+  const live = reps.filter(r => r.workers > 0);
+  const realEmus = reps.flatMap(r => r.emulators).filter(e => !e.mock);
+  if (!live.length) {
+    // installed somewhere but not taking sessions: say exactly why (never "Ready")
+    const pick = (st: EmulatorState) => realEmus.find(e => e.status === st);
+    const fw = pick('BIOS_REQUIRED') || pick('FIRMWARE_REQUIRED');
+    if (fw) return { state: 'firmware-required', label: `Real emulator · ${fw.firmwareLabel || 'firmware'} required`, ok: false, requires: fw.requires,
+      detail: `${fw.name} ${fw.version} is installed on ${fw.worker}. ${fw.requires || `The operator must install ${fw.firmwareLabel || 'firmware'} from their own console.`}` };
+    const er = pick('ERROR');
+    if (er) return { state: 'error', label: 'Emulator error', detail: `${er.name} failed its startup self-test on ${er.worker}: ${er.verified?.detail || 'unknown'}`, ok: false };
+    const nv = pick('NOT_VERIFIED');
+    if (nv) return { state: 'not-verified', label: 'Installed · not verified', detail: `${nv.name} is installed on ${nv.worker} but has not passed a real boot test.`, ok: false };
+    const ins = pick('INSTALLATION_REQUIRED');
+    if (ins) return { state: 'installation-required', label: 'Installation required', detail: `The ${ins.name} profile exists on ${ins.worker} but the emulator binary is not installed.`, ok: false };
+    return { state: 'not-deployed', label: d.maturity === 'ready' ? 'No workers' : 'Not deployed', detail: `No ${d.platformLabel} worker is deployed on this cloud.`, ok: false };
+  }
+  const real = live.filter(r => r.emulators.some(e => !e.mock && e.advertised !== false) || (!r.mock && !r.emulators.length));
+  const free = live.reduce((a, r) => a + r.free, 0), queued = live.reduce((a, r) => a + r.queued, 0), workers = live.reduce((a, r) => a + r.workers, 0);
   if (!real.length) return { state: 'mock-only', label: 'Mock worker', detail: `${workers} mock worker(s) for testing — no real ${d.platformLabel} emulator is deployed.`, ok: false };
-  if (d.maturity !== 'ready') return { state: free ? 'available' : 'busy', label: `${MATURITY_LABEL[d.maturity]} · deployed`, detail: `${workers} worker(s), ${free} free. ${d.note}`, ok: true };
+  const running = realEmus.filter(e => e.advertised !== false && e.status);   // workers before the self-test protocol send no status
+  const verified = running.filter(e => e.status === 'READY');
+  if (running.length && !verified.length) {
+    const t = running.find(e => e.testMode && e.verified?.ok);
+    if (t) return { state: 'test-mode', label: `Real emulator · ${t.firmwareLabel || 'firmware'} required`, ok: true, requires: t.requires,
+      detail: `${t.name} ${t.version} booted the Mishrin test ROM on ${t.worker} (first frame ${t.verified?.firstFrameMs ?? '?'} ms). Test mode: only test images run until the operator installs a ${t.firmwareLabel || 'firmware'} from their own console. ${t.requires || ''}` };
+    return { state: 'not-verified', label: 'Installed · not verified', detail: `${running[0].name} has not passed a real boot test yet.`, ok: false };
+  }
+  if (d.maturity !== 'ready' && !verified.length) return { state: free ? 'available' : 'busy', label: `${MATURITY_LABEL[d.maturity]} · deployed`, detail: `${workers} worker(s), ${free} free. ${d.note}`, ok: true };
   return free ? { state: 'available', label: 'Ready', detail: `${workers} worker(s), ${free} free slot(s).`, ok: true }
     : { state: 'busy', label: 'Busy', detail: `All ${workers} worker(s) busy${queued ? ` · ${queued} waiting` : ''}. You will be queued.`, ok: true };
 }

@@ -60,7 +60,7 @@ export function player(_el: HTMLElement, id: string) {
       const r = await launch(g, surface, { status, signal: ctrl.signal });
       if (closed) { r.session.dispose(); return; }
       session = r.session;
-      padFull = session.padState ? (f: number) => session?.padState?.(f) : null;
+      padFull = session.padState ? (f: number, r: number, a: [number, number, number, number]) => session?.padState?.(f, r, a) : null;
       session.onEnd = reason => fail(reason, 'ended');
       session.setMaxFps?.(settings.maxFps);
       loading.hidden = true; ovlBtn.hidden = false;
@@ -220,7 +220,7 @@ export function player(_el: HTMLElement, id: string) {
   // ---------- input ----------
   const padToGame = (b: Btn, down: boolean) => (session?.padInput ?? session?.input)?.call(session, b, down);
   // Gamepad: full 16-button state for adapters that take it (P1, cloud emulator titles), logical buttons otherwise.
-  let padFull: ((full: number) => void) | null = null;
+  let padFull: ((full: number, raw: number, axes: [number, number, number, number]) => void) | null = null;
   const popExit = pushBack(exit); // B / Esc on loading & error screens leaves the game
 
   const onKey = (e: KeyboardEvent) => {

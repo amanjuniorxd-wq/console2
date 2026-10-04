@@ -7,7 +7,8 @@ Wire format = existing `input` data channel (server/PROTOCOL.md):
   [2, buttons, x:u16, y:u16] pointer
   [4, steps:i8]              mouse wheel notches (+ down)
   [3, btn, down]            controller / touch button → mapped to keys by controllerMap
-  [5, mask:u16]              full controller state (16 buttons, FULL_PAD bit order) → keys by controllerMap (emulator titles)
+  [5, mask:u16, lx, ly, rx, ry]  full controller state: 16 buttons (FULL_PAD bit order) + optional analog sticks (int8,
+                             -127..127) → keys by controllerMap; each stick direction past half deflection = its key
   text "k1<code>" / "k0<code>" raw key
 """
 import struct
@@ -19,6 +20,7 @@ from Xlib.ext import xtest
 
 BTN_NAMES = ['up', 'down', 'left', 'right', 'a', 'b', 'start']
 FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'select', 'start', 'l3', 'r3']
+STICKS = ['lup', 'ldown', 'lleft', 'lright', 'rup', 'rdown', 'rleft', 'rright']
 LOGICAL_ALIAS = {'a': 'cross', 'b': 'circle'}  # logical A/B on a full-pad (emulator) map
 
 CODE_TO_KEYSYM = {
@@ -124,8 +126,13 @@ class Injector:
                 self.key(ks, bool(data[2]))
         elif t == 5 and len(data) >= 3:
             mask = (data[1] << 8) | data[2]
+            if len(data) >= 7:   # sticks → 8 virtual direction buttons (bits 16..23)
+                lx, ly, rx, ry = struct.unpack('>bbbb', bytes(data[3:7]))
+                for bit, on in enumerate((ly < -64, ly > 64, lx < -64, lx > 64, ry < -64, ry > 64, rx < -64, rx > 64)):
+                    if on:
+                        mask |= 1 << (16 + bit)
             changed, self.mask = mask ^ self.mask, mask
-            for i, name in enumerate(FULL_PAD):
+            for i, name in enumerate(FULL_PAD + STICKS):
                 if changed & (1 << i) and self.pad.get(name):
                     self.key(self.pad[name], bool(mask & (1 << i)))
         elif t == 2 and len(data) >= 6:

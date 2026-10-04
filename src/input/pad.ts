@@ -17,15 +17,22 @@ export const STD_INDEX: Record<FullButton, number> = {
 export const STD_HOME = 16;
 const STICK = 0.5;
 
-/** Gamepad → full-pad bitmask (left stick folds into the D-pad). Pure: unit-tested with plain objects. */
-export function readFull(p: Pick<Gamepad, 'buttons' | 'axes'> | null | undefined): number {
+/** Gamepad → full-pad bitmask (left stick folds into the D-pad unless `fold` is false). Pure: unit-tested. */
+export function readFull(p: Pick<Gamepad, 'buttons' | 'axes'> | null | undefined, fold = true): number {
   if (!p) return 0;
   let m = 0;
   for (const n of FULL) if (p.buttons[STD_INDEX[n]]?.pressed) m |= 1 << FB[n];
+  if (!fold) return m;
   const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
   if (ax < -STICK) m |= 1 << FB.left; if (ax > STICK) m |= 1 << FB.right;
   if (ay < -STICK) m |= 1 << FB.up; if (ay > STICK) m |= 1 << FB.down;
   return m;
+}
+
+/** Analog sticks as signed bytes (-127..127): [LX, LY, RX, RY] (standard mapping axes 0..3). */
+export function readAxes(p: Pick<Gamepad, 'axes'> | null | undefined): [number, number, number, number] {
+  const a = (i: number) => Math.max(-127, Math.min(127, Math.round((p?.axes[i] ?? 0) * 127)));
+  return [a(0), a(1), a(2), a(3)];
 }
 
 /** Keyboard → full pad (KeyboardEvent.code). Shown on the Controllers page. */

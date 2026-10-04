@@ -65,6 +65,13 @@ ok('adapt: floor 1 Mbps', adapt({ ...q, kbps: 1100 }, max, 0.5, 300).kbps >= 100
   ok('live: cloud without PS3 workers → not deployed', liveStatus(p3, C, rep({ 'x64-win': {} }), true).state === 'not-deployed');
   ok('live: only mock PS3 workers → mock-only (never available)', (s => s.state === 'mock-only' && !s.ok)(liveStatus(p3, C, rep({ ps3: { mock: true, emulators: [{ name: 'rpcs3', version: 'mock', firmware: true, mock: true }] } }), true)));
   ok('live: real PS3 worker → "Architecture ready · deployed" (not "Ready")', (s => s.ok && s.label.startsWith('Architecture ready'))(liveStatus(p3, C, rep({ ps3: { emulators: [{ name: 'rpcs3', version: '0.0.36', firmware: true, mock: false }] } }), true)));
+  const E = (o: object) => ({ name: 'pcsx2', version: '1.6.0', firmware: false, mock: false, firmwareLabel: 'PS2 BIOS', requires: 'A PS2 BIOS dumped from your own console.', worker: 'w1', ...o });
+  const p2 = byRuntimeId('ps2');
+  ok('live: PCSX2 installed, no BIOS → firmware-required with exact setup text (not deployed, not Ready)', (s => s.state === 'firmware-required' && !s.ok && /PS2 BIOS required/.test(s.label) && /own console/.test(s.requires || ''))(liveStatus(p2, C, rep({ ps2: { workers: 0, capacity: 0, free: 0, emulators: [E({ status: 'BIOS_REQUIRED', advertised: false })] } }), true)));
+  ok('live: PCSX2 verified with the test ROM only → test-mode (usable, never "Ready")', (s => s.state === 'test-mode' && s.ok && s.label !== 'Ready')(liveStatus(p2, C, rep({ ps2: { emulators: [E({ status: 'BIOS_REQUIRED', testMode: true, advertised: true, verified: { ok: true, firstFrameMs: 900, detail: '' } })] } }), true)));
+  ok('live: self-test failed → error; never verified → not-verified', liveStatus(p2, C, rep({ ps2: { workers: 0, emulators: [E({ status: 'ERROR', advertised: false })] } }), true).state === 'error'
+    && liveStatus(p2, C, rep({ ps2: { emulators: [E({ status: 'NOT_VERIFIED', advertised: true })] } }), true).state === 'not-verified');
+  ok('live: real BIOS + passed self-test → Ready', liveStatus(p2, C, rep({ ps2: { emulators: [E({ status: 'READY', firmware: true, advertised: true, verified: { ok: true, firstFrameMs: 900, detail: '' } })] } }), true).label === 'Ready');
   ok('live: Windows workers all busy → busy + queue hint', (s => s.state === 'busy' && /queued/.test(s.detail))(liveStatus(win, C, rep({ 'x64-win': { free: 0, active: 2, queued: 1 } }), true)));
   ok('live: Windows with a free slot → Ready', liveStatus(win, C, rep({ 'x64-win': {} }), true).label === 'Ready');
   ok('live: P1 needs WebAssembly and its core', liveStatus(byRuntimeId('mishrin-p1'), { wasm: false, webgpu: false }, null, false).ok === false && liveStatus(byRuntimeId('mishrin-p1'), C, null, false, false).label === 'Core missing');

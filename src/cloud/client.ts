@@ -292,8 +292,9 @@ export const cloud: RuntimeAdapter = {
       padInput: (b: Btn, down: boolean) => sendInput(3, b, down ? 1 : 0),
       // Unified input: emulator workers (caps.pad === 'full') take the whole 16-button state; PC titles get logical
       // button edges, which the worker maps through the game's controllerMap.
-      padState(full: number) {
-        if (fullPad) { lastInput = Date.now(); if (peer.inputCh.readyState === 'open') peer.inputCh.send(new Uint8Array([5, (full >> 8) & 0xff, full & 0xff])); }
+      padState(full: number, raw = full, axes: [number, number, number, number] = [0, 0, 0, 0]) {
+        // Emulator titles get the real controller: buttons unfolded + both analog sticks (int8) — wire type 5.
+        if (fullPad) { lastInput = Date.now(); if (peer.inputCh.readyState === 'open') peer.inputCh.send(new Uint8Array([5, (raw >> 8) & 0xff, raw & 0xff, ...axes.map(v => v & 0xff)])); }
         else for (const [f, b] of LOGICAL_FROM_FULL) { const bit = 1 << FB[f]; if ((full ^ prevFull) & bit) sendInput(3, b, full & bit ? 1 : 0); }
         prevFull = full;
       },

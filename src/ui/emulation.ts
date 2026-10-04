@@ -92,7 +92,16 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
     }
     if (rt.maturity === 'research' || !rt.cloudRuntimes?.length) return disabled('Research — not available');
     // PS2/PS3-class: cloud only, and only after the player explicitly authorizes the upload to *their* cloud.
+    if (live.requires && !live.ok) acts.insertAdjacentHTML('beforeend', setupBox(rt, live));
     if (!live.ok && live.state !== 'mock-only') return disabled(live.state === 'no-cloud' ? 'Needs your cloud (Settings → Cloud Gaming)' : `${rt.name}: ${live.label}`);
+    // the emulator actually deployed decides which container formats it accepts (validated, not assumed)
+    const fmts = (rt.cloudRuntimes || []).flatMap(r => report?.runtimes[r]?.emulators || []).filter(e => !e.mock && e.advertised !== false).flatMap(e => e.formats || []).map(f => f.toLowerCase());
+    const ext = (d.paths[0] || '').split('.').pop()?.toLowerCase() || '';
+    if (fmts.length && d.files.length === 1 && ext && !fmts.includes(ext)) {
+      acts.insertAdjacentHTML('beforeend', `<p class="note warn" data-format-refused>The ${esc(rt.platformLabel)} emulator on your cloud accepts ${esc(fmts.map(f => '.' + f).join(', '))}. Convert this .${esc(ext)} first (for CHD: <code>chdman extractdvd</code>).</p>`);
+      return disabled(`.${ext} not supported by the deployed emulator`);
+    }
+    if (live.state === 'test-mode') acts.insertAdjacentHTML('beforeend', `<p class="note warn" data-test-mode>Test mode: the cloud's real emulator runs with a Mishrin test ROM, not a console ${esc(live.label.split('· ')[1] || 'BIOS')}. Games need the operator to install one dumped from their own console.</p>`);
     const consent = h('label', 'consent');
     consent.innerHTML = `<input type="checkbox" data-consent> I own this game and authorize uploading ${fmtBytes(d.size)} to my cloud (${esc(settings.cloudEndpoint)}). It is stored there for my account only.`;
     const go = h('button', 'btn btn-play', `${ic.upload}Upload to your cloud & add`);
@@ -116,7 +125,12 @@ ${d.warnings.length ? `<p class="note warn">${d.warnings.map(esc).join('<br>')}<
 
 // ------------------------------------------------------------------ Emulators
 const CORE_RUNTIME = { p1: 'mishrin-p1', p2: 'ps2', p3: 'ps3-cloud', p4: 'ps4' } as const;
-const DOT: Record<string, string> = { available: 'ok', busy: 'warn', 'mock-only': 'warn', 'not-deployed': 'off', 'no-cloud': 'off', unsupported: 'off', unavailable: 'off' };
+const DOT: Record<string, string> = { available: 'ok', busy: 'warn', 'mock-only': 'warn', 'test-mode': 'warn', 'not-deployed': 'off', 'no-cloud': 'off', unsupported: 'off', unavailable: 'off',
+  'installation-required': 'off', 'firmware-required': 'warn', 'not-verified': 'warn', error: 'off' };
+/** Clear setup instructions when a real emulator is installed but needs user-provided firmware/BIOS (never shipped by Mishrin). */
+function setupBox(rt: RuntimeDescriptor, l: { label: string; requires?: string }): string {
+  return `<div class="note warn setup-req" data-setup="${rt.id}"><b>Setup required — ${esc(l.label)}</b><br>${esc(l.requires || '')}<br>Mishrin does not download, include or distribute console BIOS or system software.</div>`;
+}
 
 /** Runtime Status: LOCAL / CLOUD, every row derived from the registry + live checks (device caps, /api/runtimes). */
 export async function runtimeStatus(box: HTMLElement): Promise<void> {
@@ -125,7 +139,8 @@ export async function runtimeStatus(box: HTMLElement): Promise<void> {
   const report = settings.cloudEndpoint ? await cloudReport() : null;
   const row = (d: RuntimeDescriptor) => {
     const l = liveStatus(d, caps, report, !!settings.cloudEndpoint, p1);
-    return `<div class="rt-row" data-rt="${d.id}" data-state="${l.state}"><span class="dot ${DOT[l.state]}" aria-hidden="true">●</span><span class="rt-name">${esc(d.name)} <small>${esc(d.platformLabel)}</small></span>${maturityChip(d.maturity)}<span class="rt-live">${esc(l.label)}</span><span class="rt-detail">${esc(l.detail)}</span></div>`;
+    const setup = l.requires && (l.state === 'firmware-required' || l.state === 'test-mode') ? setupBox(d, l) : '';
+    return `${setup ? '<div class="rt-wrap">' : ''}<div class="rt-row" data-rt="${d.id}" data-state="${l.state}"><span class="dot ${DOT[l.state]}" aria-hidden="true">●</span><span class="rt-name">${esc(d.name)} <small>${esc(d.platformLabel)}</small></span>${maturityChip(d.maturity)}<span class="rt-live">${esc(l.label)}</span><span class="rt-detail">${esc(l.detail)}</span></div>${setup ? setup + '</div>' : ''}`;
   };
   const group = (title: string, list: RuntimeDescriptor[]) => `<h2 class="sub-title">${title}</h2><div class="rt-list">${list.map(row).join('')}</div>`;
   box.innerHTML = group('Local', RUNTIMES.filter(d => d.where.includes('local') && d.maturity === 'ready'))

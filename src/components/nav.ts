@@ -7,7 +7,7 @@ import { onPad, pads, type PadState } from '../input/gamepad';
 import { FB, LOGICAL_FROM_FULL } from '../input/pad';
 
 type PadHandler = (b: Btn, down: boolean) => void;
-type FullHandler = (full: number) => void;
+type FullHandler = (full: number, raw: number, axes: [number, number, number, number]) => void;
 type Dir = 'up' | 'down' | 'left' | 'right';
 
 const root = document.documentElement;
@@ -32,7 +32,7 @@ export function back(): void {
 }
 
 /** While a game is running, pad buttons go to the session instead of the UI. */
-export function capturePad(h: PadHandler | null, toggleOverlay: (() => void) | null = null, full: FullHandler | null = null) { padHandler = h; overlayToggle = toggleOverlay; fullHandler = full; lastFull = -1; }
+export function capturePad(h: PadHandler | null, toggleOverlay: (() => void) | null = null, full: FullHandler | null = null) { padHandler = h; overlayToggle = toggleOverlay; fullHandler = full; lastFull = -1; lastSig = ''; }
 export function onSection(f: (d: 1 | -1) => void) { sectionStep = f; }
 
 const SEL = 'button:not([disabled]),a[href],input:not([disabled]),[tabindex="0"]';
@@ -99,7 +99,8 @@ let prevFull = 0, prevHome = false, prevSel = false, prevStart = false, lastFull
 const held: Record<string, number> = {};
 const DIRS: [Dir, number][] = [['up', FB.up], ['down', FB.down], ['left', FB.left], ['right', FB.right]];
 
-function onPadState({ full, home }: PadState): void {
+let lastSig = '';
+function onPadState({ full, raw, axes, home }: PadState): void {
   if (!padEnabled) { prevFull = full; return; }
   const t = performance.now();
   const is = (bit: number) => !!(full & (1 << bit)), was = (bit: number) => !!(prevFull & (1 << bit));
@@ -108,7 +109,7 @@ function onPadState({ full, home }: PadState): void {
   const sel = is(FB.select), start = is(FB.start);
   const menuCombo = (sel && start && !(prevSel && prevStart));
   if (padHandler || fullHandler) {
-    if (fullHandler) { if (full !== lastFull) { lastFull = full; fullHandler(full); } }
+    if (fullHandler) { const sig = `${full}|${raw}|${axes.map(v => (v > 64 ? 1 : v < -64 ? -1 : 0)).join()}`; if (full !== lastFull || sig !== lastSig) { lastFull = full; lastSig = sig; fullHandler(full, raw, axes); } }
     else for (const [f, b] of LOGICAL_FROM_FULL) if (is(FB[f]) !== was(FB[f])) padHandler!(b, is(FB[f]));
     if ((home && !prevHome) || menuCombo) overlayToggle?.();
   } else {

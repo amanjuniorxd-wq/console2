@@ -14,7 +14,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync, rename
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateManifest, manifestHash, peInfo, uploadManifest, runtimeOf, relPath, ManifestError, EMULATOR_PLATFORMS } from './lib/manifest.mjs';
-import { selectWorker, alive, WORKER_TIMEOUT } from './lib/select.mjs';
+import { selectWorker, alive, capable, WORKER_TIMEOUT } from './lib/select.mjs';
 import { fsStorage, CHUNK, HASH } from './lib/storage.mjs';
 import { createAuth } from './lib/auth.mjs';
 import { inspectUpload, InspectError } from './lib/inspect.mjs';
@@ -209,11 +209,13 @@ function assign(s, h, extra = {}) {
 
 const deployed = rt => liveHosts().some(h => h.runtimes.has(rt));
 /** Could any live worker host this title when idle? (Queueing for a slot that can never fit would wait forever.) */
-const fitsAnywhere = need => liveHosts().some(h => h.runtimes.has(need.runtime)
+const fitsAnywhere = need => liveHosts().some(h => h.runtimes.has(need.runtime) && capable(h, need.runtime)
   && (!need.ramMB || !h.caps.resources?.ramMB || h.caps.resources.ramMB - 1024 >= need.ramMB)
   && (!need.gpu || h.kind !== 'worker' || h.caps.resources?.gpu?.available));
 /** Operator defaults for uploaded titles, e.g. UPLOAD_DEFAULTS='{"ps3":{"ram":4096}}' (falls back to platform defaults). */
 const UPLOAD_DEFAULTS = JSON.parse(process.env.UPLOAD_DEFAULTS || '{}');
+/** Session display per console class: PCSX2 1.6 renders a 640x480 window (4:3); RPCS3 uses the 1280x720 default. */
+const PLATFORM_DISPLAY = { ps2: { width: 640, height: 480 } };
 
 async function createSession(req, b) {
   const rt = b?.game?.runtime;
@@ -306,16 +308,24 @@ function publicSession(s, live = false) {
 /** Live capability registry: what each runtime can do *right now*, derived only from registered, heartbeating workers. */
 function runtimeReport() {
   const out = {};
+  const slot = rt => out[rt] ??= { runtime: rt, name: NAMES[rt] || rt, workers: 0, capacity: 0, active: 0, held: 0, gpuWorkers: 0, hardwareGpu: 0, emulators: [], mock: false };
   for (const h of liveHosts()) {
     for (const rt of h.runtimes) {
-      const r = out[rt] ??= { runtime: rt, name: NAMES[rt] || rt, workers: 0, capacity: 0, active: 0, held: 0, gpuWorkers: 0, hardwareGpu: 0, emulators: [], mock: false };
+      const r = slot(rt);
       r.workers++; r.capacity += h.capacity; r.active += h.active.size; r.held += h.holds.size;
       if (h.caps.resources?.gpu?.available) r.gpuWorkers++;
       if (h.caps.resources?.gpu?.hardware) r.hardwareGpu++;
-      for (const e of h.caps.emulators || []) if (e && e.runtime === rt) {
-        r.emulators.push({ name: String(e.name).slice(0, 40), version: String(e.version || '').slice(0, 40), firmware: !!e.firmware, mock: !!e.mock });
-        if (e.mock) r.mock = true;
-      }
+    }
+    // every installed emulator is reported, also when it cannot take sessions (BIOS/firmware missing, self-test failed)
+    for (const e of h.caps.emulators || []) if (e && typeof e.runtime === 'string') {
+      const r = slot(e.runtime);
+      const v = e.verified && typeof e.verified === 'object' ? e.verified : {};
+      r.emulators.push({ name: String(e.name).slice(0, 40), version: String(e.version || '').slice(0, 40), firmware: !!e.firmware, mock: !!e.mock,
+        status: String(e.status || (e.mock ? 'MOCK' : 'NOT_VERIFIED')).slice(0, 24), firmwareLabel: String(e.firmwareLabel || '').slice(0, 40),
+        firmwareState: String(e.firmwareState || '').slice(0, 16), requires: String(e.requires || '').slice(0, 400), testMode: !!e.testMode,
+        advertised: h.runtimes.has(e.runtime), worker: h.name || h.id.slice(0, 8), formats: Array.isArray(e.formats) ? e.formats.slice(0, 12).map(String) : [],
+        verified: { ok: !!v.ok, firstFrameMs: +v.firstFrameMs || null, detail: String(v.detail || '').slice(0, 160) } });
+      if (e.mock && h.runtimes.has(e.runtime)) r.mock = true;
     }
   }
   for (const r of Object.values(out)) { r.free = Math.max(0, r.capacity - r.active - r.held); r.queued = waitingFor(r.runtime).length; }
@@ -381,7 +391,7 @@ function completeUpload(u) {
     ? (u.files.length === 1
       ? validateManifest({ id: mid, title, type: 'windows', runtime: 'wine', executable: 'game.exe', files: [{ ...u.files[0], path: 'game.exe' }], arch: info.arch, network: false, graphics: 'auto', requirements: { ram: 2048, gpu: true, maxMinutes: 240 } })
       : null)
-    : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files: u.files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}) });
+    : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files: u.files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}), ...(PLATFORM_DISPLAY[info.platform] ? { display: PLATFORM_DISPLAY[info.platform] } : {}) });
   if (!manifest) return [422, { error: 'Upload a single Windows .exe.' }];
   const rec = { id: u.id, owner: u.owner, manifest, platform: info.platform, runtime: runtimeOf(manifest), title, serial: info.serial || '', created: Date.now() };
   uploads.set(u.id, rec); pendingUploads.delete(u.id); persistUploads();
@@ -534,6 +544,10 @@ const server = http.createServer(async (req, res) => {
       h.seen = Date.now();
       if (sub === 'heartbeat') {
         h.lastBeat = Date.now(); h.load = +b.load || 0;
+        // Emulator state changes after registration (startup self-tests, firmware installed by the operator).
+        if (Array.isArray(b.emulators)) h.caps.emulators = b.emulators.slice(0, 16);
+        if (b.flags && typeof b.flags === 'object') h.caps.flags = b.flags;
+        if (Array.isArray(b.runtimes)) { const next = new Set(b.runtimes.filter(r => typeof r === 'string').slice(0, 16)); if ([...next].join() !== [...h.runtimes].join()) { h.runtimes = next; setImmediate(pumpQueue); } }
         if (b.cache?.games) h.caps.cache = { games: b.cache.games.filter(x => HASH.test(x)).slice(0, 5000) };
         if (b.cache?.stats && typeof b.cache.stats === 'object') h.cacheStats = b.cache.stats;
         h.status = new Map((b.sessions || []).filter(x => x && typeof x.id === 'string').map(x => [x.id, x]));
@@ -601,7 +615,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/admin/workers' && req.method === 'GET') {
       if (!ADMIN_TOKEN || !tokenOk(req, ADMIN_TOKEN)) return send(res, 401, { error: 'unauthorized' });
       return send(res, 200, [...hosts.values()].map(h => ({ id: h.id, name: h.name, kind: h.kind, alive: alive(h), load: h.load, capacity: h.capacity, runtimes: [...h.runtimes],
-        active: [...h.active], holds: h.holds.size, reservedRamMB: h.reservedRam, encoders: h.caps.encoders, gpu: h.caps.resources?.gpu, layers: h.caps.layers, emulators: h.caps.emulators || [],
+        active: [...h.active], holds: h.holds.size, reservedRamMB: h.reservedRam, encoders: h.caps.encoders, gpu: h.caps.resources?.gpu, flags: h.caps.flags || null, layers: h.caps.layers, emulators: h.caps.emulators || [],
         cachedGames: h.caps.cache?.games?.length || 0, cacheStats: h.cacheStats, isolation: h.caps.isolation, sessions: [...h.status.values()] })));
     }
     if (p === '/v1/games' && req.method === 'GET') return send(res, 200, [...games.values()].map(g => ({ id: g.id, title: g.title, runtime: runtimeOf(g), platform: g.type === 'emulator' ? g.platform : 'windows' })));

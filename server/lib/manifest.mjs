@@ -37,6 +37,9 @@ export const EMULATOR_PLATFORMS = {
   ps2: { emulator: 'pcsx2', boot: /\.(iso|chd|cue)$/i, ram: 4096, cpus: 2, storageMB: 8192 },
   ps3: { emulator: 'rpcs3', boot: /(^|\/)EBOOT\.BIN$|\.iso$/i, ram: 8192, cpus: 4, storageMB: 65536 },
 };
+/** Analog stick directions (full deflection), bound to keys the emulator profiles map to stick axes. */
+export const STICKS = ['lup', 'ldown', 'lleft', 'lright', 'rup', 'rdown', 'rleft', 'rright'];
+export const DEFAULT_STICKS = { lup: 'i', ldown: 'k', lleft: 'j', lright: 'l', rup: 'w', rdown: 's', rleft: 'a', rright: 'd' };
 /** Default keyboard bindings the worker's emulator profiles configure (Keyboard pad handler). */
 export const DEFAULT_FULL_PAD = { up: 'Up', down: 'Down', left: 'Left', right: 'Right', cross: 'x', circle: 'c', square: 'z', triangle: 'v',
   l1: 'q', r1: 'e', l2: '1', r2: '3', select: 'BackSpace', start: 'Return', l3: 'f', r3: 'g' };
@@ -91,8 +94,8 @@ function validateEmulator(m, out) {
   validateCommon(m, out, plat);
   const cm = m.controllerMap ?? {};
   if (typeof cm !== 'object' || Array.isArray(cm)) fail('controllerMap must be an object');
-  out.controllerMap = { ...DEFAULT_FULL_PAD };
-  for (const [k, v] of Object.entries(cm)) { if (!FULL_PAD.includes(k) || !KEYS.has(v)) fail(`controllerMap ${k}->${v} not allowed`); out.controllerMap[k] = v; }
+  out.controllerMap = { ...DEFAULT_FULL_PAD, ...DEFAULT_STICKS };
+  for (const [k, v] of Object.entries(cm)) { if ((!FULL_PAD.includes(k) && !STICKS.includes(k)) || !KEYS.has(v)) fail(`controllerMap ${k}->${v} not allowed`); out.controllerMap[k] = v; }
   return out;
 }
 

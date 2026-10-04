@@ -31,6 +31,11 @@ ok('selection: hardware GPU preferred for GPU titles', selectWorker([mk('a'), mk
 ok('selection: full / dead / low-RAM / no-Vulkan / excluded workers skipped', selectWorker([
   mk('full', { capacity: 1, active: new Set(['x']) }), mk('dead', { lastBeat: 0 }), mk('lowram', { caps: { resources: { ramMB: 2000, gpu: { available: true } } } }),
   mk('novk', { caps: { resources: { ramMB: 32000, gpu: { available: false } } } }), mk('excluded')], { runtime: 'x64-win', ramMB: 4096, gpu: true, exclude: new Set(['excluded']) }) === null);
+const fl = (rt, flags) => mk(`${rt}-${JSON.stringify(flags)}`, { runtimes: new Set([rt]), caps: { ...mk('x').caps, flags } });
+ok('selection: PS3 never lands on a worker without a detected RPCS3 + graphics; PS2 needs PCSX2 (real detection flags)',
+  selectWorker([fl('ps3', { cpu: true, rpcs3: false, vulkan: true }), fl('ps3', { cpu: true, rpcs3: true, vulkan: false, opengl: false })], { runtime: 'ps3' }) === null
+  && selectWorker([fl('ps3', { rpcs3: false, vulkan: true }), fl('ps3', { rpcs3: true, opengl: true })], { runtime: 'ps3' })?.caps.flags.rpcs3 === true
+  && selectWorker([fl('ps2', { pcsx2: false })], { runtime: 'ps2' }) === null && selectWorker([fl('ps2', { pcsx2: false, mockRuntimes: ['ps2'] })], { runtime: 'ps2' }) !== null);
 ok('selection: least loaded among equals', selectWorker([mk('busy', { load: 0.9 }), mk('idle', { load: 0.1 })], { runtime: 'x64-win' })?.id === 'idle');
 
 // ---------------------------------------------------------------- live scheduler

@@ -46,6 +46,9 @@ def rel_path(p, what, allow_empty=False):
 
 
 FULL_PAD = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'select', 'start', 'l3', 'r3']
+# Analog sticks (full deflection per direction), bound to keys the emulator profiles map to stick directions.
+STICKS = ['lup', 'ldown', 'lleft', 'lright', 'rup', 'rdown', 'rleft', 'rright']
+DEFAULT_STICKS = {'lup': 'i', 'ldown': 'k', 'lleft': 'j', 'lright': 'l', 'rup': 'w', 'rdown': 's', 'rleft': 'a', 'rright': 'd'}
 DEFAULT_FULL_PAD = {'up': 'Up', 'down': 'Down', 'left': 'Left', 'right': 'Right', 'cross': 'x', 'circle': 'c', 'square': 'z', 'triangle': 'v',
                     'l1': 'q', 'r1': 'e', 'l2': '1', 'r2': '3', 'select': 'BackSpace', 'start': 'Return', 'l3': 'f', 'r3': 'g'}
 # Same table as server/lib/manifest.mjs EMULATOR_PLATFORMS: the emulator is fixed per platform.
@@ -128,9 +131,9 @@ def _validate_emulator(m, out):
     cm = m.get('controllerMap') or {}
     if not isinstance(cm, dict):
         raise ManifestError('controllerMap must be an object')
-    pad = dict(DEFAULT_FULL_PAD)
+    pad = {**DEFAULT_FULL_PAD, **DEFAULT_STICKS}
     for k, v in cm.items():
-        if k not in FULL_PAD or v not in KEYS:
+        if (k not in FULL_PAD and k not in STICKS) or v not in KEYS:
             raise ManifestError(f'controllerMap {k}->{v} not allowed')
         pad[k] = v
     out['controllerMap'] = pad

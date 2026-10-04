@@ -146,6 +146,8 @@ class Stream:
         self.frames = 0
         self._fps_t, self._fps_n, self.measured_fps = time.time(), 0, 0
         self.venc.get_static_pad('src').add_probe(Gst.PadProbeType.BUFFER, self._count)
+        self._enc_in, self.encode_ms = {}, None          # encoder latency: buffer PTS in → out (moving average)
+        self.venc.get_static_pad('sink').add_probe(Gst.PadProbeType.BUFFER, self._enc_sink)
         self.webrtc.connect('on-data-channel', self._on_dc)
         self.webrtc.connect('notify::connection-state', self._on_conn)
         self.channels = {}
@@ -251,7 +253,20 @@ class Stream:
             w, h = self._wh(self.height)
             self.vcaps.set_property('caps', Gst.Caps.from_string(f'video/x-raw,format=I420,width={w},height={h},framerate={self.fps}/1'))
 
-    def _count(self, _pad, _info):
+    def _enc_sink(self, _pad, info):
+        b = info.get_buffer()
+        if b is not None and len(self._enc_in) < 256:
+            self._enc_in[b.pts] = time.monotonic()
+        return Gst.PadProbeReturn.OK
+
+    def _count(self, _pad, info):
+        b = info.get_buffer()
+        t = self._enc_in.pop(b.pts, None) if b is not None else None
+        if t is not None:
+            ms = (time.monotonic() - t) * 1000
+            self.encode_ms = ms if self.encode_ms is None else self.encode_ms * 0.9 + ms * 0.1
+        if len(self._enc_in) > 200:
+            self._enc_in.clear()
         self.frames += 1
         self._fps_n += 1
         now = time.time()
@@ -263,6 +278,7 @@ class Stream:
         w, h = self._wh(self.height)
         return {'codec': self.codec, 'encoder': self.encoder, 'hardwareEncoder': self.hw, 'fps': self.measured_fps,
                 'targetFps': self.fps, 'kbps': self.kbps, 'width': w, 'height': h, 'framesEncoded': self.frames, 'audio': self.audio,
+                'encodeMs': round(self.encode_ms, 1) if self.encode_ms is not None else None,
                 'connection': self.webrtc.get_property('connection-state').value_nick}
 
     def _bus_loop(self):

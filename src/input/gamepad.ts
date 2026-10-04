@@ -1,8 +1,9 @@
 /** One gamepad poller for the whole console: a single rAF loop reads navigator.getGamepads() once per frame and
  *  fans the state out to subscribers (UI navigation, the player, emulator adapters, the Controllers page). */
-import { readFull, STD_HOME } from './pad';
+import { readFull, readAxes, STD_HOME } from './pad';
 
-export interface PadState { pad: Gamepad | null; full: number; home: boolean; buttons: boolean[] }
+/** full: buttons with the left stick folded into the D-pad · raw: buttons only · axes: [LX, LY, RX, RY] int8 */
+export interface PadState { pad: Gamepad | null; full: number; raw: number; axes: [number, number, number, number]; home: boolean; buttons: boolean[] }
 type Sub = (s: PadState) => void;
 const subs = new Set<Sub>();
 let raf = 0;
@@ -13,7 +14,7 @@ function tick() {
   raf = 0;
   const p = pads()[0] ?? null;
   const buttons = p ? p.buttons.map(b => !!b?.pressed) : [];
-  const state: PadState = { pad: p, full: readFull(p), home: !!buttons[STD_HOME], buttons };
+  const state: PadState = { pad: p, full: readFull(p), raw: readFull(p, false), axes: readAxes(p), home: !!buttons[STD_HOME], buttons };
   for (const f of subs) f(state);
   if (subs.size && p) raf = requestAnimationFrame(tick);
 }

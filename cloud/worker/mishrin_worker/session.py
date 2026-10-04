@@ -61,6 +61,8 @@ class Session:
         t0 = time.time()
         self.layer_hash, layer = self.w.store.acquire_layer(self.manifest)
         self.log(f'game layer ready ({"reused" if self.w.store.stats["layers_reused"] else "built"}) in {time.time() - t0:.2f}s')
+        ms = lambda a, b=None: round(((b or time.time()) - a) * 1000)
+        self.timings = {'layerMs': ms(t0)}
         prefix = self.profile.runtime_layer(self.log)
         self.sb.prepare_storage()
         if self.restore_ref:
@@ -74,11 +76,16 @@ class Session:
         self.pulse = None if os.environ.get('MISHRIN_AUDIO') == 'silence' else self.sb.start_audio()
         from .inputx import Injector
         self.inj = Injector(self.display, self.manifest['controllerMap'])
+        self.timings['sandboxMs'] = ms(t0) - self.timings['layerMs']
         self._launch_game()
         self._wait_window(cfg.window_timeout)
+        self.timings['emulatorWindowMs'] = ms(self.game_started)     # process start → first mapped window
+        t_s = time.time()
         self.last_save_mtime = savelayer.newest_mtime(self.sb.dir, self.profile.save_include)
         self.stream = self._new_stream(self.offer)
         self.state = 'streaming'
+        self.timings['streamSetupMs'] = ms(t_s)
+        self.timings['totalMs'] = ms(t0)
         threading.Thread(target=self._watchdog, name=f'watchdog-{self.id[:8]}', daemon=True).start()
         self.log(f'streaming {self.stream.codec} via {self.stream.encoder} ({"hardware" if self.stream.hw else "software"}) in {time.time() - self.started:.1f}s')
         return self.stream.answer
@@ -310,6 +317,9 @@ class Session:
             if self.sb.mounts and self.paused:
                 self.sb.cg.freeze(False)
                 self.paused = False
+            stop = getattr(self.profile, 'graceful_stop', None)
+            if stop:
+                stop(self)   # emulators that flush save data only on close (PCSX2 memory cards)
             if os.path.isdir(self.sb.dir) and savelayer.newest_mtime(self.sb.dir, self.profile.save_include) > self.last_save_mtime:
                 self.sb.stop_game()
                 self.save('auto')
@@ -352,7 +362,8 @@ class Session:
 
     def status(self):
         s = {'id': self.id, 'game': self.manifest['id'], 'state': self.state, 'uptime': round(time.time() - self.started, 1),
-             'restarts': self.restarts, 'paused': self.paused, 'display': f'{self.screen[0]}x{self.screen[1]}'}
+             'restarts': self.restarts, 'paused': self.paused, 'display': f'{self.screen[0]}x{self.screen[1]}',
+             'timings': getattr(self, 'timings', None)}
         if self.inj and self.state in ('streaming', 'disconnected'):
             s['windows'] = [t[:160] for t in self.inj.windows()[:3]]
             s['inputEvents'] = self.inj.events

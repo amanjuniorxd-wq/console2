@@ -41,6 +41,8 @@ class Config:
     display_base: int = 100
     dxvk_dir: str = '/opt/mishrin/layers/dxvk-2.6.1'
     emulators_dir: str = '/opt/mishrin/emulators'
+    allow_test_firmware: bool = False
+    self_test: bool = True
     vkd3d_dir: str = '/opt/mishrin/layers/vkd3d-proton-2.14.1'
     cache_gb: float = 200
     window_timeout: float = 90
@@ -134,9 +136,17 @@ class Worker:
         except Exception:
             pass
         mem = int(open('/proc/meminfo').read().split()[1]) // 1024
+        emus = [p.info() for p in self.profiles if p.kind == 'emulator']
+        # OpenGL: a Mesa/vendor GL driver is installed (sessions render on their own Xorg/Xvfb display with it)
+        gl = bool(glob.glob('/usr/lib/x86_64-linux-gnu/dri/*_dri.so') or glob.glob('/usr/lib/x86_64-linux-gnu/libGLX_*.so.0')) and bool(glob.glob('/usr/lib/*/libGL.so.1'))
+        runs = lambda n: any(e['name'] == n and not e['mock'] and e['installed'] for e in emus)
+        flags = {'cpu': True, 'gpu': vk['available'], 'hardwareGpu': vk['hardware'], 'vulkan': vk['available'], 'opengl': bool(gl),
+                 'pcsx2': runs('pcsx2'), 'rpcs3': runs('rpcs3'), 'wine': any(p.kind == 'windows' and p.available() for p in self.profiles),
+                 'mockRuntimes': sorted({e['runtime'] for e in emus if e['mock']})}
         return {
-            'name': self.cfg.name, 'version': VERSION, 'runtimes': ready_runtimes(self.profiles), 'capacity': self.cfg.capacity,
-            'emulators': [p.info() for p in self.profiles if p.kind == 'emulator'],
+            'flags': flags,
+            'name': self.cfg.name, 'version': VERSION, 'runtimes': ready_runtimes(self.profiles, self.cfg.allow_test_firmware), 'capacity': self.cfg.capacity,
+            'emulators': emus,
             'resources': {'ramMB': mem, 'cpus': os.cpu_count(), 'gpu': vk, 'renderNodes': len(glob.glob('/dev/dri/renderD*'))},
             'encoders': enc, 'hardwareEncoders': [e for e in enc if ENCODERS[e][1]],
             'codecs': sorted({ENCODERS[e][0] for e in enc}),
@@ -263,6 +273,8 @@ class Worker:
                 st = [s.status() for s in list(self.sessions.values())]
                 load = os.getloadavg()[0] / (os.cpu_count() or 1)
                 r = self.sched._req('POST', '/worker/heartbeat', {'worker': self.sched.id, 'sessions': st, 'load': round(load, 2),
+                                                                   'emulators': [p.info() for p in self.profiles if p.kind == 'emulator'],
+                                                                   'runtimes': ready_runtimes(self.profiles, self.cfg.allow_test_firmware),
                                                                    'cache': {'games': self.store.cached_layers(), 'stats': self.store.stats}})
                 for sid in (r or {}).get('unknown', []):  # scheduler no longer tracks it: clean up
                     s = self.sessions.get(sid)
@@ -278,9 +290,19 @@ class Worker:
             except Exception as e:
                 self.log(f'heartbeat failed: {e}')
 
+    def run_self_tests(self):
+        from . import selftest
+        for p in self.profiles:
+            if p.kind == 'emulator' and p.spec.get('selfTest'):
+                p.self_test = selftest.run(self, p, self.free_display())
+                self.log(f"self-test {p.name}: {'PASS' if p.self_test['ok'] else 'FAIL'} — {p.self_test.get('detail')}"
+                         f"{' · first frame ' + str(p.self_test['firstFrameMs']) + ' ms' if p.self_test.get('firstFrameMs') else ''}")
+
     def run(self):
         self.reclaim_leftovers()
         self.layers.ensure(self.log)
+        if self.cfg.self_test:
+            self.run_self_tests()
         while not self.stopping.is_set():
             try:
                 self.sched.register()
@@ -332,13 +354,16 @@ def main():
     ap.add_argument('--autosave', type=float, default=float(os.environ.get('MISHRIN_AUTOSAVE_S', '60')))
     ap.add_argument('--emulators', default=os.environ.get('MISHRIN_EMULATORS', '/opt/mishrin/emulators'),
                     help='directory of emulator profiles (one emulator.json per subdirectory)')
+    ap.add_argument('--allow-test-firmware', action='store_true', default=os.environ.get('MISHRIN_ALLOW_TEST_FIRMWARE') == '1',
+                    help='test mode: accept Mishrin test ROMs / HLE test programs in place of user firmware (sessions only run test programs)')
+    ap.add_argument('--skip-self-test', action='store_true', help='do not boot each emulator once at startup')
     ap.add_argument('--reconnect-grace', type=float, default=float(os.environ.get('MISHRIN_RECONNECT_GRACE', '60')))
     a = ap.parse_args()
     if os.geteuid() != 0:
         sys.exit('mishrin_worker must run as root (it creates mounts, cgroups and drops each game to an unprivileged uid)')
     cfg = Config(scheduler=a.scheduler, token=a.token, name=a.name, data=a.data, capacity=a.capacity, display_base=a.display_base,
                  game_uid=a.game_uid, hang_timeout=a.hang_timeout, autosave_s=a.autosave, reconnect_grace=a.reconnect_grace,
-                 emulators_dir=a.emulators)
+                 emulators_dir=a.emulators, allow_test_firmware=a.allow_test_firmware, self_test=not a.skip_self_test)
     w = Worker(cfg)
     signal.signal(signal.SIGTERM, lambda *_: (w.shutdown(), sys.exit(0)))
     signal.signal(signal.SIGINT, lambda *_: (w.shutdown(), sys.exit(0)))

@@ -14,7 +14,7 @@ export const CORES: Record<Platform, CoreDescriptor> = {
     id: 'p2', name: 'Mishrin P2', status: 'experimental', available: false,
     formats: ['ISO (DVD)', 'CHD (DVD)'],
     summary: 'PlayStation-2-class consoles. In development: cloud worker profile (PCSX2) built and tested with a mock emulator; no local core.',
-    reason: 'Local: not in this build (Play! WebAssembly needs Emscripten 4, WASM threads + cross-origin isolation). Cloud: PCSX2 worker profile exists, no real PCSX2 has been run here. See docs/universal-runtime-architecture.md.',
+    reason: 'Local: not in this build (Play! WebAssembly needs Emscripten 4, WASM threads + cross-origin isolation). Cloud: real PCSX2 1.6 on a worker (verified with the Mishrin test ROM + test disc); games need your own PS2 BIOS on the worker. See docs/universal-runtime-architecture.md.',
   },
   p3: {
     id: 'p3', name: 'Mishrin P3', status: 'research', available: false,
