@@ -7,7 +7,6 @@ import { ic } from '../components/icons';
 import { h, modal, chips, toast } from '../components/ui';
 import { focusEl } from '../components/nav';
 import { cloudReport } from '../runtimes/cloud-status';
-import { expandGameFiles, upload } from '../storage/upload';
 
 const MIN_W = 240, GAP = 18, META = 0; // card height = width * 9/16 (meta overlays the art)
 
@@ -123,13 +122,8 @@ export function addGameDialog(): void {
     sheet.innerHTML = `<h2>Add Game</h2><div class="stack">
 <p class="note" style="margin:0">Only add games you own or are licensed to play. Files stay on this device.</p>
 <label class="field"><input data-k="title" placeholder="Title (optional)" aria-label="Title"></label>
-<button class="btn btn-play" data-k="file" data-autofocus>${ic.file}Choose local game file</button>
+<button class="btn btn-play" data-k="file" data-autofocus>${ic.file}Choose game file</button>
 <input type="file" hidden accept=".html,.htm,.wasm,.exe,application/wasm,text/html">
-<div class="note" style="margin:4px 0 0">For Windows cloud games, upload the complete game folder or a ZIP — not just the EXE.</div>
-<button class="btn" data-k="cloudfolder">${ic.cloud}Upload Windows game folder</button>
-<input type="file" hidden data-k="cloudfolderinput" webkitdirectory directory multiple>
-<button class="btn" data-k="cloudzip">${ic.cloud}Upload Windows ZIP</button>
-<input type="file" hidden data-k="cloudzipinput" accept=".zip,application/zip">
 <div style="text-align:center;color:var(--dim);font-size:12px;letter-spacing:.2em">OR FROM URL</div>
 <label class="field"><input data-k="url" type="url" placeholder="https://… game URL" aria-label="Game URL"></label>
 <div data-k="rt"></div>
@@ -144,33 +138,6 @@ export function addGameDialog(): void {
     const busy = (b: boolean) => sheet.querySelectorAll('button').forEach(x => (x.disabled = b));
     const done = (g: Game) => { close(); toast(`${g.title} added`); location.hash = `#/game/${g.id}`; };
     $('file').onclick = () => file.click();
-    const cloudFolder = $('cloudfolder') as HTMLButtonElement;
-    const cloudFolderInput = $('cloudfolderinput') as HTMLInputElement;
-    const cloudZip = $('cloudzip') as HTMLButtonElement;
-    const cloudZipInput = $('cloudzipinput') as HTMLInputElement;
-    const uploadCloud = async (files: FileList | File[]) => {
-      busy(true); err.textContent = 'Preparing Windows game package…';
-      try {
-        const expanded = await expandGameFiles(files);
-        const total = expanded.reduce((n, f) => n + f.blob.size, 0);
-        if (!expanded.some(f => /\.exe$/i.test(f.path))) throw new Error('No .exe file was found. Select the complete Windows game folder or ZIP.');
-        err.textContent = `Uploading ${expanded.length} files (${(total / 1073741824).toFixed(2)} GB)…`;
-        const result = await upload(expanded, {
-          title: title.value,
-          onProgress: p => {
-            const doneBytes = p.done || 0, maxBytes = p.total || 1;
-            const pct = Math.min(100, Math.round(doneBytes / maxBytes * 100));
-            err.textContent = p.phase === 'hashing' ? `Preparing package… ${pct}%` : p.phase === 'uploading' ? `Uploading game… ${pct}%` : 'Checking game package…';
-          }
-        });
-        const game = await addCloudGame(result, { files: expanded.map(f => f.blob as File), paths: expanded.map(f => f.path), size: total, title: title.value });
-        done(game);
-      } catch (e) { err.textContent = (e as Error).message || 'Windows game upload failed.'; busy(false); }
-    };
-    cloudFolder.onclick = () => cloudFolderInput.click();
-    cloudFolderInput.onchange = () => { if (cloudFolderInput.files?.length) void uploadCloud(cloudFolderInput.files); };
-    cloudZip.onclick = () => cloudZipInput.click();
-    cloudZipInput.onchange = () => { if (cloudZipInput.files?.length) void uploadCloud(cloudZipInput.files); };
     file.onchange = async () => {
       const f = file.files?.[0]; if (!f) return;
       busy(true); err.textContent = '';
