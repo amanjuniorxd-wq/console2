@@ -179,16 +179,30 @@ def validate(m, *, allow_network=False):
         raise ManifestError('game too large')
     out['files'] = norm_files
 
-    exe = rel_path(m.get('executable'), 'executable')
-    if not exe.lower().endswith('.exe'):
-        raise ManifestError('executable must be a .exe')
-    if exe.lower() not in seen:
-        raise ManifestError('executable is not part of the game files')
-    out['executable'] = exe
-    wd = rel_path(m.get('workingDirectory', exe.rsplit('/', 1)[0] if '/' in exe else ''), 'workingDirectory', allow_empty=True)
-    if wd and not any(p.lower().startswith(wd.lower() + '/') for p in seen):
-        raise ManifestError('workingDirectory does not exist in the game')
-    out['workingDirectory'] = wd
+    archive = m.get('archive')
+    is_archive = isinstance(archive, dict)
+    if is_archive:
+        fmt = str(archive.get('format', ''))
+        if fmt not in {'zip', 'rar'}:
+            raise ManifestError('archive.format must be zip or rar')
+        ap = rel_path(archive.get('path'), 'archive.path')
+        if ap.lower() not in seen:
+            raise ManifestError('archive.path is not part of the game files')
+        out['archive'] = {'path': ap, 'format': fmt}
+    exe = rel_path(m.get('executable'), 'executable', allow_empty=is_archive)
+    if is_archive and not exe:
+        out['executable'] = '__AUTO__'
+        out['workingDirectory'] = ''
+    else:
+        if not exe.lower().endswith('.exe'):
+            raise ManifestError('executable must be a .exe')
+        if exe.lower() not in seen:
+            raise ManifestError('executable is not part of the game files')
+        out['executable'] = exe
+        wd = rel_path(m.get('workingDirectory', exe.rsplit('/', 1)[0] if '/' in exe else ''), 'workingDirectory', allow_empty=True)
+        if wd and not any(p.lower().startswith(wd.lower() + '/') for p in seen):
+            raise ManifestError('workingDirectory does not exist in the game')
+        out['workingDirectory'] = wd
 
     args = m.get('args', [])
     if not isinstance(args, list) or len(args) > 16 or not all(isinstance(a, str) and ARG_RE.match(a) for a in args):
