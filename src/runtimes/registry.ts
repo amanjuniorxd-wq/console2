@@ -6,7 +6,7 @@
  * Maturity is a property of the code; availability is a property of the moment:
  *   ready               runs real software, verified by tests in this repo
  *   in-development      partially built; not usable for real games yet
- *   architecture-ready  protocol + worker integration + tests with a mock emulator; the real emulator is not deployed
+ *   architecture-ready  protocol + worker integration + tests with a mock emulator; no real emulator integrated
  *   research            detection only
  * A runtime is *available* only when its maturity is `ready` (or a real worker reports it deployed) AND the live
  * check passes. A cloud runtime backed only by a mock worker is shown as such — never as available.
@@ -44,9 +44,9 @@ export const RUNTIMES: RuntimeDescriptor[] = [
   { id: 'ps2', name: 'Mishrin P2', platform: 'ps2', platformLabel: 'PS2-class', where: ['local', 'cloud'], engine: 'Cloud: PCSX2 1.6 on a worker · Local: not built',
     maturity: 'in-development', serves: ['p2'], cloudRuntimes: ['ps2'], formats: ['ISO', 'CHD', 'CUE+BIN'], userFiles: 'Your own discs and your own PS2 BIOS (installed on the worker by its operator).',
     note: 'Real PCSX2 runs on cloud workers, verified end to end with original Mishrin test software (video, audio, full controller, memory-card saves). Games need a PS2 BIOS from your own console, installed on the worker by its operator.', tests: 'tests/real/e2e_real_ps2.py (REAL_EMULATOR_TEST) · tests/cloud/e2e_windows.py (mock)' },
-  { id: 'ps3-cloud', name: 'Mishrin P3 Cloud', platform: 'ps3', platformLabel: 'PS3-class', where: ['cloud'], engine: 'RPCS3 on a GPU worker',
-    maturity: 'architecture-ready', serves: ['p3'], cloudRuntimes: ['ps3'], formats: ['Game folder (PS3_GAME)', 'ISO'], userFiles: 'Your own games and your own PS3 system software (installed on the worker by its operator).',
-    note: 'Architecture ready, runtime not deployed: session API, scheduling, queueing, isolation, input, saves and streaming are implemented and tested with a mock RPCS3.', tests: 'tests/cloud/universal.test.mjs · tests/cloud/test_worker.py · tests/cloud/e2e_windows.py (mock)' },
+  { id: 'ps3-cloud', name: 'Mishrin P3 Cloud', platform: 'ps3', platformLabel: 'PS3-class', where: ['cloud'], engine: 'RPCS3 0.0.43 on a worker (LLVM PPU · Vulkan RSX)',
+    maturity: 'in-development', serves: ['p3'], cloudRuntimes: ['ps3'], formats: ['Game folder (PS3_GAME)', 'ISO (decrypted)'], userFiles: 'Your own games and your own PS3 system software (installed on the worker by its operator).',
+    note: 'Real RPCS3 runs on cloud workers, verified end to end with an original Mishrin test program (video, audio, full controller, saves). Games need PS3 system software from your own console, installed on the worker by its operator.', tests: 'tests/real/e2e_real_ps3.py (REAL_EMULATOR_TEST) · tests/cloud/e2e_windows.py (mock)' },
   { id: 'windows-cloud', name: 'Windows', platform: 'windows', platformLabel: 'Windows', where: ['cloud'], engine: 'Wine 9 (WoW64) + DXVK / VKD3D-Proton on a GPU worker',
     maturity: 'ready', serves: ['x64-win', 'x86'], cloudRuntimes: ['x64-win', 'x86'], formats: ['.exe (single file)', 'registered titles'],
     note: 'Ready on the tested targets (Win32 GDI, D3D9, D3D11; 32/64-bit). Availability depends on deployed workers.', tests: 'tests/cloud/e2e_windows.py' },

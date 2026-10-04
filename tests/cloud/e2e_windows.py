@@ -453,7 +453,7 @@ async def main():
         await go.click()
         await page.wait_for_url('**/#/game/c-saffron-orbit', timeout=60000)
         badges = ' | '.join(await page.locator('.badges .badge').all_text_contents())
-        check('uploaded PS3 title in the universal library (runtime · platform · cloud · maturity)', 'Mishrin P3 Cloud · PS3-class' in badges and 'Cloud · uploaded by you' in badges and 'Architecture ready' in badges, badges)
+        check('uploaded PS3 title in the universal library (runtime · platform · cloud · maturity)', 'Mishrin P3 Cloud · PS3-class' in badges and 'Cloud · uploaded by you' in badges and 'In development' in badges, badges)
         sessions_seen.clear()
         t_p3 = time.time()
         await page.click('button.btn-play')

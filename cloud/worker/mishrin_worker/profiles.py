@@ -148,7 +148,9 @@ class EmulatorProfile:
         missing = [r for r in req if not os.path.isfile(self._inside(os.path.join(home_rel, r)))]
         if not missing:
             return {'state': 'present', 'detail': ', '.join(req)}
-        return {'state': 'test-only' if fw.get('hleTest') else 'missing', 'detail': f'missing: {", ".join(missing)}'}
+        if fw.get('hleTest'):
+            return {'state': 'test-only', 'detail': f'no {fw.get("label", "firmware")} installed ({", ".join(missing)} missing): built-in HLE libraries only — Mishrin test program, not games'}
+        return {'state': 'missing', 'detail': f'missing: {", ".join(missing)}'}
 
     def firmware_ok(self):
         return self.firmware_status()['state'] == 'present'

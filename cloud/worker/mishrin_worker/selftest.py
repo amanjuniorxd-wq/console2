@@ -18,7 +18,8 @@ from .sandbox import Sandbox
 
 
 def _frame_stats(display, w, h):
-    """Distinct colours and non-black pixels in a sampled screenshot of the session display."""
+    """Distinct colours, non-black pixels and a digest of a sampled screenshot of the session display."""
+    import hashlib
     from Xlib import X, display as xdisplay
     d = xdisplay.Display(f':{display}')
     try:
@@ -31,7 +32,7 @@ def _frame_stats(display, w, h):
         colours.add(bytes(px))
         if max(px) > 24:
             lit += 1
-    return len(colours), lit
+    return len(colours), lit, hashlib.sha1(raw).hexdigest()
 
 
 def _windows(display):
@@ -61,7 +62,7 @@ def run(worker, profile, display):
         return {'ok': False, 'detail': f"firmware {fw['state']}: {fw['detail']}", 'firmware': fw['state']}
     w, h = 640, 480
     sid = f'selftest-{profile.name}-{secrets.token_hex(4)}'
-    sb = Sandbox(worker.cfg, sid, display, {'ram': 2048, 'cpus': 2, 'storageMB': 1024})
+    sb = Sandbox(worker.cfg, sid, display, {'ram': int(spec.get('ram', 2048)), 'cpus': 2, 'storageMB': 1024, 'fileMB': int(profile.spec.get('maxFileMB', 0))})
     empty = tempfile.mkdtemp(prefix='mishrin-selftest-', dir=os.path.join(worker.cfg.data))
     os.chown(empty, worker.cfg.game_uid, worker.cfg.game_uid)
     res = {'ok': False, 'firmware': fw['state'], 'firmwareDetail': fw['detail'], 'version': profile.spec.get('version', '')}
@@ -82,7 +83,7 @@ def run(worker, profile, display):
         proc = sb.launch(argv, env, wd, None, log_name='selftest.log', extra_ro=profile.extra_ro)
         title_re = re.compile(spec.get('title', '.'))
         deadline = t_launch + float(spec.get('seconds', 40))
-        t_window = t_frame = None
+        t_window = t_frame = first_digest = None
         while time.time() < deadline:
             if proc.poll() is not None:
                 res['detail'] = f'emulator exited (code {proc.returncode}) during self-test'
@@ -90,26 +91,37 @@ def run(worker, profile, display):
             if t_window is None and any(title_re.search(n) for n in _windows(display)):
                 t_window = time.time()
             if t_window is not None:
-                colours, lit = _frame_stats(display, w, h)
+                colours, lit, digest = _frame_stats(display, w, h)
                 if colours >= 3 and lit > 0:
-                    t_frame = time.time()
-                    res.update(ok=True, colours=colours)
-                    break
+                    t_frame = t_frame or time.time()
+                    first_digest = first_digest or digest
+                    if digest != first_digest:          # the picture changes: the program is running, not a still image
+                        res.update(ok=True, colours=colours, frameUpdates=True)
+                        break
+                else:
+                    t_frame = first_digest = None
             time.sleep(0.25)
         else:
-            res['detail'] = 'no window' if t_window is None else 'window but no rendered frame'
+            res['detail'] = 'no window' if t_window is None else 'window but no rendered frame' if t_frame is None else 'frame never changed (program not running)'
         res['emulatorStartMs'] = round(((t_window or time.time()) - t_launch) * 1000)
-        if t_frame:
+        if t_frame and res['ok']:
             res['firstFrameMs'] = round((t_frame - t_launch) * 1000)
-            res['detail'] = f"window '{[n for n in _windows(display) if title_re.search(n)][:1]}' and a rendered frame"
+            res['detail'] = f"window '{[n for n in _windows(display) if title_re.search(n)][:1]}' and rendered, changing frames"
     except Exception as e:
         res['detail'] = f'self-test error: {e}'
-    finally:
-        try:
-            sb.destroy()
+    if not res['ok']:
+        try:   # keep the emulator's last words for the operator
+            with open(os.path.join(sb.dir, 'selftest.log'), 'rb') as f:
+                f.seek(0, 2); f.seek(max(0, f.tell() - 1500))
+                res['log'] = f.read().decode('utf-8', 'replace')[-1500:]
+            worker.log(f'self-test {profile.name} log tail:\n{res["log"]}')
         except Exception:
             pass
-        shutil.rmtree(empty, ignore_errors=True)
+    try:
+        sb.destroy()
+    except Exception:
+        pass
+    shutil.rmtree(empty, ignore_errors=True)
     res['seconds'] = round(time.time() - t0, 1)
     res['ts'] = int(time.time())
     return res

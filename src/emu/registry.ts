@@ -19,8 +19,8 @@ export const CORES: Record<Platform, CoreDescriptor> = {
   p3: {
     id: 'p3', name: 'Mishrin P3', status: 'research', available: false,
     formats: ['Disc folder / ISO', 'PKG'],
-    summary: 'PlayStation-3-class consoles. Cloud only: architecture ready, runtime not deployed.',
-    reason: 'A browser cannot run Cell PPU/SPU code at speed. The cloud path (RPCS3 on a GPU worker: scheduling, isolation, input, saves, streaming) is implemented and tested with a mock RPCS3; a real RPCS3 worker is not deployed.',
+    summary: 'PlayStation-3-class consoles. Cloud only: real RPCS3 on a worker; games need your own PS3 system software there.',
+    reason: 'A browser cannot run Cell PPU/SPU code at speed. The cloud path runs real RPCS3 on a worker (verified with the Mishrin test program: video, audio, controller, saves); commercial games need PS3 system software from your own console, installed by the operator.',
   },
   p4: {
     id: 'p4', name: 'Mishrin P4', status: 'research', available: false,

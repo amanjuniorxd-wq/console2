@@ -78,8 +78,8 @@ async def main():
         await page.wait_for_selector('.emu-card')
         cards = await page.evaluate("[...document.querySelectorAll('.emu-card')].map(c => ({name: c.querySelector('.emu-name').textContent, status: c.querySelector('.badge').textContent, disabled: [...c.querySelectorAll('button')].filter(b => b.disabled).map(b => b.textContent)}))")
         st = {c['name']: c for c in cards}
-        check('Emulators page: P1 Ready, P2 In development, P3 Architecture ready, P4 Research (no fake launch buttons)',
-              st['Mishrin P1']['status'] == 'Ready' and st['Mishrin P2']['status'] == 'In development' and st['Mishrin P3']['status'] == 'Architecture ready' and st['Mishrin P4']['status'] == 'Research'
+        check('Emulators page: P1 Ready, P2 In development, P3 In development, P4 Research (no fake launch buttons)',
+              st['Mishrin P1']['status'] == 'Ready' and st['Mishrin P2']['status'] == 'In development' and st['Mishrin P3']['status'] == 'In development' and st['Mishrin P4']['status'] == 'Research'
               and all(st[f'Mishrin P{i}']['disabled'] for i in (2, 3, 4)), json.dumps({k: (v['status'], v['disabled']) for k, v in st.items()}))
         await page.wait_for_selector('.rt-row')
         rows = await page.evaluate("[...document.querySelectorAll('.rt-row')].map(r => [r.dataset.rt, r.dataset.state, r.querySelector('.rt-live').textContent])")

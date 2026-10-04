@@ -11,6 +11,7 @@ Wire format = existing `input` data channel (server/PROTOCOL.md):
                              -127..127) → keys by controllerMap; each stick direction past half deflection = its key
   text "k1<code>" / "k0<code>" raw key
 """
+import re
 import struct
 import threading
 import time
@@ -39,7 +40,7 @@ CODE_TO_KEYSYM = {
 
 
 class Injector:
-    def __init__(self, display_num, controller_map):
+    def __init__(self, display_num, controller_map, focus_title=None, autorepeat=True):
         # XAUTHORITY points at the worker-wide cookie file (each session display has its own cookie).
         self.d = xdisplay.Display(f':{display_num}')
         self.root = self.d.screen().root
@@ -51,6 +52,10 @@ class Injector:
         self.mask = 0
         self.events = 0
         self._focus_checked = 0.0
+        self.focus_re = re.compile(focus_title) if focus_title else None   # emulators with several windows (RPCS3)
+        if not autorepeat:   # a held pad button is one press: X autorepeat's synthetic release/press pairs confuse pad plugins
+            self.d.change_keyboard_control(auto_repeat_mode=X.AutoRepeatModeOff)
+            self.d.flush()
 
     def _keycode(self, keysym_name):
         ks = XK.string_to_keysym(keysym_name)
@@ -64,11 +69,12 @@ class Injector:
             return
         self._focus_checked = now
         try:
-            for w in reversed(self.root.query_tree().children):   # stacking order: last = topmost
-                if w.get_attributes().map_state == X.IsViewable and w.get_wm_name():
-                    if self.d.get_input_focus().focus != w:
-                        w.set_input_focus(X.RevertToParent, X.CurrentTime)
-                    return
+            wins = [w for w in reversed(self.root.query_tree().children)   # stacking order: last = topmost
+                    if w.get_attributes().map_state == X.IsViewable and w.get_wm_name()]
+            if self.focus_re:
+                wins = sorted(wins, key=lambda w: not self.focus_re.search(str(w.get_wm_name())))
+            if wins and self.d.get_input_focus().focus != wins[0]:
+                wins[0].set_input_focus(X.RevertToParent, X.CurrentTime)
         except Exception:
             pass
 

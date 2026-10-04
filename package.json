@@ -17,7 +17,10 @@
     "test:emu-browser": "python3 tests/emu/e2e_emu.py",
     "test:scheduler": "node tests/cloud/scheduler.test.mjs && node tests/cloud/universal.test.mjs",
     "test:worker": "sudo /usr/bin/python3.12 tests/cloud/test_worker.py",
-    "test:windows": "sudo python3 tests/cloud/e2e_windows.py"
+    "test:windows": "sudo python3 tests/cloud/e2e_windows.py",
+    "test:real": "sudo python3 tests/real/e2e_real_ps2.py && sudo python3 tests/real/e2e_real_ps3.py",
+    "test:real-ps2": "sudo python3 tests/real/e2e_real_ps2.py",
+    "test:real-ps3": "sudo python3 tests/real/e2e_real_ps3.py"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",

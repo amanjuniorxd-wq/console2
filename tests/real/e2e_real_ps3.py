@@ -1,18 +1,19 @@
 """
-REAL_EMULATOR_TEST — PS2-class: the real PCSX2 emulator behind the real cloud pipeline. No mocks anywhere.
+REAL_EMULATOR_TEST — PS3-class: the real RPCS3 emulator behind the real cloud pipeline. No mocks anywhere.
 
-    Console (Chromium) → Session API → scheduler → worker → sandbox → PCSX2 1.6 → x264/Opus → WebRTC → Console
+    Console (Chromium) → Session API → scheduler → PS3 worker → sandbox → RPCS3 (LLVM PPU, Vulkan RSX) → encoder → WebRTC → Console
 
-What runs: PCSX2 executes the original Mishrin test ROM (emulators/ps2/testrom; installed in the BIOS slot because no
-console BIOS may be shipped) and mounts the original Mishrin test disc (out/mishrin-ps2-testdisc.iso), which the ROM
-reads through the emulated CDVD (ISO9660 → GAME.DAT). Every assertion is made on pixels the browser decoded from the
-WebRTC stream, or on audio the browser received.
+What runs: RPCS3 boots the original Mishrin PS3 test program (emulators/ps3/testapp: a PowerPC64 LV2 executable built
+with clang/lld) from an uploaded disc-layout game folder. No PS3 system software is installed (none may be shipped), so
+the worker runs in test mode with RPCS3's built-in (HLE) system libraries. The program reads GAME.DAT from /dev_bdvd,
+draws with RSX clears, reads the pad (cellPad), plays a 750 Hz tone (cellAudio) and saves through cellFs.
+Every assertion is made on pixels the browser decoded from the WebRTC stream, or on audio the browser received.
 
-Needs: root, PCSX2 (apt pcsx2:i386), the console built and served (npm run build && npm run preview), and the profiles:
-    sh emulators/ps2/testrom/build.sh
-    python3 cloud/worker/emulators/pcsx2/setup.py /opt/mishrin/emulators-real/pcsx2 --bios emulators/ps2/testrom/out/mishrin-ps2-test.rom
-    python3 cloud/worker/emulators/pcsx2/setup.py /opt/mishrin/emulators-nobios/pcsx2
-Run: sudo python3 tests/real/e2e_real_ps2.py      (writes tests/real/report-ps2.json)
+Needs: root, RPCS3 bundled by cloud/worker/emulators/rpcs3/install.sh, the console built and served, and the profiles:
+    sh emulators/ps3/testapp/build.sh
+    python3 cloud/worker/emulators/rpcs3/setup.py /opt/mishrin/emulators-real/rpcs3 --test-app emulators/ps3/testapp/out/MSHR00001
+    python3 cloud/worker/emulators/rpcs3/setup.py /opt/mishrin/emulators-nobios/rpcs3
+Run: sudo python3 tests/real/e2e_real_ps3.py      (writes tests/real/report-ps3.json)
 """
 import asyncio
 import json
@@ -29,13 +30,13 @@ from playwright.async_api import async_playwright
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 CONSOLE = os.environ.get('BASE', 'http://localhost:4173')
-PORT = 8799
+PORT = 8800
 SCHED = f'http://127.0.0.1:{PORT}'
 WT, AT = 'real-worker-token', 'real-admin-token'
-TMP = '/tmp/mishrin-real'
-DISC = os.path.join(ROOT, 'emulators', 'ps2', 'testrom', 'out', 'mishrin-ps2-testdisc.iso')
-WORKERS = {'ps2-real': ('/var/lib/mishrin-real', 500, '/opt/mishrin/emulators-real', True),
-           'ps2-nobios': ('/var/lib/mishrin-nobios', 600, '/opt/mishrin/emulators-nobios', False)}
+TMP = '/tmp/mishrin-real3'
+GAME = os.path.join(ROOT, 'emulators', 'ps3', 'testapp', 'out', 'MSHR00001')
+WORKERS = {'ps3-real': ('/var/lib/mishrin-real3', 520, '/opt/mishrin/emulators-real', True),
+           'ps3-nofw': ('/var/lib/mishrin-nofw3', 620, '/opt/mishrin/emulators-nobios', False)}
 results, procs, timings, metrics = [], {}, {}, {}
 
 
@@ -83,8 +84,8 @@ def workers():
 
 def no_leftovers(sid):
     mounts = open('/proc/mounts').read()
-    pcsx2 = subprocess.run(['pgrep', '-f', '/usr/games/PCSX2'], capture_output=True).returncode == 0
-    return not any(os.path.exists(os.path.join(d, 'sessions', sid)) for d, *_ in WORKERS.values()) and sid not in mounts and not pcsx2
+    emu = subprocess.run(['pgrep', '-f', 'mishrin-rpcs3/rpcs3'], capture_output=True).returncode == 0
+    return not any(os.path.exists(os.path.join(d, 'sessions', sid)) for d, *_ in WORKERS.values()) and sid not in mounts and not emu
 
 
 HOOKS = """
@@ -97,8 +98,8 @@ HOOKS = """
   window.RTCPeerConnection = function (...a) { const pc = new PC(...a); window.__pcs.push(pc); return pc; };
   window.RTCPeerConnection.prototype = PC.prototype;
   Object.assign(window.RTCPeerConnection, PC);
-  // pixels of the decoded WebRTC video, addressed in the ROM's GS coordinates (640x448 framebuffer). PCSX2 scales the
-  // framebuffer into its window (aspect ratio), so the GS area is located once from the ROM's background colour.
+  // pixels of the decoded WebRTC video, addressed in the program's 1280x720 framebuffer coordinates (located once from
+  // the program's background colour).
   const grab = () => { const v = document.querySelector('#player video'); if (!v || !v.videoWidth) return null;
     const c = window.__c || (window.__c = document.createElement('canvas')); c.width = v.videoWidth; c.height = v.videoHeight;
     const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(v, 0, 0); return x; };
@@ -106,7 +107,7 @@ HOOKS = """
     const bg = k => Math.abs(d[k] - 16) < 10 && Math.abs(d[k+1] - 8) < 10 && Math.abs(d[k+2] - 16) < 10;
     let x0 = W, y0 = H, x1 = 0, y1 = 0;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (bg((j * W + i) * 4)) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
-    if (x1 <= x0) return null; window.__R = { x0, y0, sx: (x1 + 1 - x0) / 640, sy: (y1 + 1 - y0) / 448 }; return window.__R; };
+    if (x1 <= x0) return null; window.__R = { x0, y0, sx: (x1 + 1 - x0) / 1280, sy: (y1 + 1 - y0) / 720 }; return window.__R; };
   const at = (gx, gy) => { const R = window.__R || { x0: 0, y0: 0, sx: 1, sy: 1 }; return [R.x0 + gx * R.sx, R.y0 + gy * R.sy]; };
   window.__px = (pts) => { const x = grab(); if (!x) return null;
     return pts.map(([gx, gy]) => { const [X, Y] = at(gx, gy); const d = x.getImageData(Math.round(X) - 1, Math.round(Y) - 1, 3, 3).data;
@@ -139,33 +140,32 @@ async def main():
     os.makedirs(TMP, exist_ok=True)
     for d in ('cas', 'games', 'data'):
         shutil.rmtree(f'{TMP}/{d}', ignore_errors=True)
-    assert os.path.exists(DISC), 'build the test disc first: sh emulators/ps2/testrom/build.sh'
+    assert os.path.exists(GAME), 'build the test program first: sh emulators/ps3/testapp/build.sh'
     env = dict(os.environ, PORT=str(PORT), WORKER_TOKEN=WT, ADMIN_TOKEN=AT, CAS_DIR=f'{TMP}/cas', GAMES_DIR=f'{TMP}/games', DATA_DIR=f'{TMP}/data',
-               WORKER_TIMEOUT_MS='8000', UPLOAD_DEFAULTS=json.dumps({'ps2': {'ram': 2048, 'cpus': 2, 'storageMB': 2048}}))
+               WORKER_TIMEOUT_MS='8000', UPLOAD_DEFAULTS=json.dumps({'ps3': {'ram': 3072, 'cpus': 2, 'storageMB': 4096}}))
     procs['sched'] = subprocess.Popen(['node', 'server/broker.mjs'], cwd=ROOT, env=env, stdout=open(f'{TMP}/sched.log', 'w'), stderr=subprocess.STDOUT)
     wait_for(lambda: api('GET', '/v1/config')[0] == 200, 10)
 
-    # ================= worker start → emulator self-test (real PCSX2 boot) → registry =================
+    # ================= worker start → emulator self-test (real RPCS3 boot) → registry =================
     t0 = time.time()
     for n in WORKERS:
         start_worker(n)
     ws = wait_for(lambda: (lambda w: len(w) == 2 and w)(workers()), 240, 1)
     timings['workerStartToRegisteredMs'] = round((time.time() - t0) * 1000)
-    real = (ws or {}).get('ps2-real', {})
-    nob = (ws or {}).get('ps2-nobios', {})
-    re_ = next((e for e in real.get('emulators', []) if e['name'] == 'pcsx2'), {})
-    ne_ = next((e for e in nob.get('emulators', []) if e['name'] == 'pcsx2'), {})
+    real = (ws or {}).get('ps3-real', {})
+    nob = (ws or {}).get('ps3-nofw', {})
+    re_ = next((e for e in real.get('emulators', []) if e['name'] == 'rpcs3'), {})
+    ne_ = next((e for e in nob.get('emulators', []) if e['name'] == 'rpcs3'), {})
     v = re_.get('verified') or {}
     timings['selfTestEmulatorStartMs'], timings['selfTestFirstFrameMs'] = v.get('emulatorStartMs'), v.get('firstFrameMs')
-    check('worker self-test: real PCSX2 booted the test ROM and rendered a frame before the worker registered', v.get('ok') and not re_.get('mock'),
+    check('worker self-test: real RPCS3 booted the test program (game flips > 0 FPS, changing frames) before the worker registered', v.get('ok') and not re_.get('mock'),
           f"{re_.get('version')} · window {v.get('emulatorStartMs')} ms · first frame {v.get('firstFrameMs')} ms · {v.get('detail', '')[:70]}")
-    check('BIOS check: Mishrin test ROM recognised as a test ROM (not a console BIOS) → BIOS_REQUIRED + test mode, never READY',
-          re_.get('firmwareState') == 'test-only' and re_.get('status') == 'BIOS_REQUIRED' and re_.get('testMode') and 'ps2' in real.get('runtimes', []), re_.get('firmwareDetail'))
-    check('worker without BIOS: PCSX2 installed, BIOS_REQUIRED, PS2 not offered to the scheduler',
-          ne_.get('installed') and ne_.get('status') == 'BIOS_REQUIRED' and 'ps2' not in nob.get('runtimes', []), f"{ne_.get('status')} · {ne_.get('firmwareDetail')}")
-    rep = api('GET', '/api/runtimes')[1]['runtimes'].get('ps2', {})
+    check('firmware check: no PS3 system software (dev_flash liblv2.sprx) → FIRMWARE_REQUIRED + HLE test mode, never READY',
+          re_.get('firmwareState') == 'test-only' and re_.get('status') == 'FIRMWARE_REQUIRED' and re_.get('testMode') and 'ps3' in real.get('runtimes', []), re_.get('firmwareDetail'))
+    check('worker without firmware (not in test mode): RPCS3 installed, FIRMWARE_REQUIRED, PS3 not offered to the scheduler',
+          ne_.get('installed') and ne_.get('status') == 'FIRMWARE_REQUIRED' and 'ps3' not in nob.get('runtimes', []), f"{ne_.get('status')} · {ne_.get('firmwareDetail')}")
     rf, nf = real.get('flags') or {}, nob.get('flags') or {}
-    check('worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/rpcs3)', rf.get('pcsx2') and nf.get('pcsx2') and rf.get('cpu') and 'rpcs3' in rf and 'vulkan' in rf,
+    check('worker capability flags from real detection (cpu/gpu/vulkan/opengl/pcsx2/rpcs3)', rf.get('rpcs3') and nf.get('rpcs3') and rf.get('cpu') and (rf.get('vulkan') or rf.get('opengl')),
           {k: rf.get(k) for k in ('cpu', 'gpu', 'hardwareGpu', 'vulkan', 'opengl', 'pcsx2', 'rpcs3')})
 
     async with async_playwright() as p:
@@ -214,7 +214,7 @@ async def main():
         async def shot(name):
             import base64
             u = await page.evaluate("(() => { const v = document.querySelector('#player video'); const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0); return c.toDataURL('image/png'); })()")
-            open(os.path.join(ROOT, 'tests', 'shots', f'real-ps2-{name}.png'), 'wb').write(base64.b64decode(u.split(',', 1)[1]))
+            open(os.path.join(ROOT, 'tests', 'shots', f'real-ps3-{name}.png'), 'wb').write(base64.b64decode(u.split(',', 1)[1]))
 
         async def find(kind, rect):
             return await page.evaluate('a => window.__find(...a)', [kind, *rect])
@@ -236,20 +236,20 @@ async def main():
                 await asyncio.sleep(0.05)
             return t, created[-1] if created else (None, None)
 
-        # ================= registry in the console: PS2 = real emulator, test mode (not Ready) =================
+        # ================= registry in the console: PS3 = real emulator, test mode (not Ready) =================
         await boot('#/emulators')
-        await wait_js("['test-mode','firmware-required','available'].includes(document.querySelector('.rt-row[data-rt=\"ps2\"]')?.dataset.state)", timeout=30000)
-        row = await page.evaluate("(r => [r.dataset.state, r.querySelector('.rt-live').textContent, r.querySelector('.rt-detail').textContent])(document.querySelector('.rt-row[data-rt=\"ps2\"]'))")
-        setup = await page.text_content('[data-setup="ps2"]') if await page.query_selector('[data-setup="ps2"]') else ''
-        check('console runtime status: PS2 "Real emulator · PS2 BIOS required" (test mode), with exact setup instructions', row[0] == 'test-mode' and 'Ready' not in row[1] and 'own console' in setup,
+        await wait_js("['test-mode','firmware-required','available'].includes(document.querySelector('.rt-row[data-rt=\"ps3-cloud\"]')?.dataset.state)", timeout=30000)
+        row = await page.evaluate("(r => [r.dataset.state, r.querySelector('.rt-live').textContent, r.querySelector('.rt-detail').textContent])(document.querySelector('.rt-row[data-rt=\"ps3-cloud\"]'))")
+        setup = await page.text_content('[data-setup="ps3-cloud"]') if await page.query_selector('[data-setup="ps3-cloud"]') else ''
+        check('console runtime status: PS3 "Real emulator · PS3 system software required" (test mode), with exact setup instructions', row[0] == 'test-mode' and 'Ready' not in row[1] and 'own console' in setup,
               f'{row[1]} | {setup[:100]}')
 
-        # ================= detector → upload → automatic resolution (browser never names PCSX2) =================
+        # ================= detector → upload → automatic resolution (browser never names RPCS3) =================
         await boot('#/upload')
-        await page.set_input_files('input[data-files]', DISC)
-        await page.wait_for_selector('.emu-card[data-runtime="ps2"]', timeout=15000)
+        await page.set_input_files('input[data-dir]', GAME)
+        await page.wait_for_selector('.emu-card[data-runtime="ps3-cloud"]', timeout=15000)
         card = await page.text_content('.emu-card')
-        check('detector: test disc identified as PS2-class from SYSTEM.CNF/BOOT2 (content, not extension)', 'PS2-class' in card and 'MSHR_000.01' in card, card[:140])
+        check('detector: game folder identified as PS3-class from PARAM.SFO (content, not names)', 'PS3-class' in card and 'MSHR00001' in card, card[:140])
         await page.check('[data-consent]')
         tu = time.time()
         await page.click('.emu-card .btn-play')
@@ -258,7 +258,7 @@ async def main():
 
         # ================= play: allocation → emulator → disc → first frame in the browser =================
         tp, (tc, sid) = await play()
-        timings['allocationAndLaunchMs'] = round((tc - tp) * 1000) if tc else None      # POST → worker answered (sandbox + PCSX2 window + stream)
+        timings['allocationAndLaunchMs'] = round((tc - tp) * 1000) if tc else None      # POST → worker answered (sandbox + RPCS3 window + stream)
         await wait_js("(() => { const v = document.querySelector('#player video'); return v && v.videoWidth > 0 && v.currentTime > 0; })()", timeout=30000)
         timings['firstFrameBrowserMs'] = round((time.time() - tp) * 1000)
         cal = None
@@ -268,64 +268,64 @@ async def main():
                 break
             await asyncio.sleep(0.1)
         metrics['gsArea'] = cal
-        disc = await wait_px((568, 16), GREEN, 30)
+        disc = await wait_px((1136, 32), GREEN, 60)
         timings['gameLoadedBrowserMs'] = round((time.time() - tp) * 1000)
         st = wait_for(lambda: (lambda x: x and ((x.get('live') or {}).get('windows')) and x)(api('GET', f'/api/session/{sid}/status')[1]), 15) or {}
         live = st.get('live') or {}
         timings['worker'] = live.get('timings')
-        box = await px((320, 224))
+        box = await px((640, 328))
         await shot('first-frame')
         if os.environ.get('DEBUG_STOP'):
             raise SystemExit('debug stop')
-        check('PCSX2 session on the BIOS-equipped worker, scheduled automatically (no emulator chosen by the browser)', st.get('worker') == 'ps2-real' and 'Slot:' in (live.get('windows') or [''])[0],
-              f"worker {st.get('worker')} · window {(live.get('windows') or [''])[0][:60]}")
-        check('test image loaded: ROM read GAME.DAT from the disc through the emulated CDVD (disc square green, box in the disc colour)',
+        check('RPCS3 session on the RPCS3-capable worker, scheduled automatically (no emulator chosen by the browser)', st.get('worker') == 'ps3-real' and any('FPS' in w for w in (live.get('windows') or [])),
+              f"worker {st.get('worker')} · windows {[w[:60] for w in (live.get('windows') or [])]}")
+        check('test image loaded: program read GAME.DAT from /dev_bdvd via cellFs (disc square green, box in the disc colour)',
               disc and box and SAFFRON(box[0]), f'disc {disc} box {box}')
         check('browser receives rendered frames of the running game', timings['firstFrameBrowserMs'] < 120000,
               f"first frame {timings['firstFrameBrowserMs']} ms after Play")
 
-        # ================= controller: every button through Gamepad API → DataChannel → worker → PCSX2 → ROM =================
+        # ================= controller: every button through Gamepad API → DataChannel → worker → RPCS3 → program =================
         await page.evaluate("window.__padOn = true; dispatchEvent(new Event('gamepadconnected'))")
         await asyncio.sleep(0.5)
-        b0 = await find('saffron', (0, 30, 640, 400))
+        b0 = await find('saffron', (0, 48, 1280, 620))
         lit, lat, trace = {}, [], []
         for i, name in enumerate(FULL):
             if name == 'start':
                 continue                                   # START = save; exercised in the save test below
-            ms = await page.evaluate('a => window.__react(...a)', [STD[name], 40 * i + 20, 416])
+            ms = await page.evaluate('a => window.__react(...a)', [STD[name], 80 * i + 40, 664])
             await page.evaluate(f'window.__press({STD[name]}, false)')
             lit[name] = ms is not None
             await asyncio.sleep(0.2)
-            trace.append((name, ms and round(ms), (lambda b: b and b.get('n') and (round(b['x']), round(b['y'])))(await find('saffron', (0, 30, 640, 400)))))
+            trace.append((name, ms and round(ms), (lambda b: b and b.get('n') and (round(b['x']), round(b['y'])))(await find('saffron', (0, 48, 1280, 620)))))
             if ms is not None:
                 lat.append(ms)
             await asyncio.sleep(0.35)
-        b1 = await find('saffron', (0, 30, 640, 400))
+        b1 = await find('saffron', (0, 48, 1280, 620))
         check('D-pad, face buttons, shoulders, triggers, Select, L3/R3 reach the game (indicator lit in the streamed frame)', all(lit.values()),
               ' '.join(f"{k}{'✓' if v else '✗'}" for k, v in lit.items()))
         lat.sort()
         metrics['buttonTrace'] = trace
         metrics['inputRoundTripMs'] = {'median': round(lat[len(lat) // 2]) if lat else None, 'min': round(lat[0]) if lat else None, 'max': round(lat[-1]) if lat else None, 'n': len(lat)}
-        b1 = await find('saffron', (0, 30, 640, 400))
+        b1 = await find('saffron', (0, 48, 1280, 620))
         await hold(STD['right'], 0.6)
         await hold(STD['down'], 0.4)
-        b2 = await find('saffron', (0, 30, 640, 400))
-        bar0 = await find('saffron', (8, 6, 640, 22))
+        b2 = await find('saffron', (0, 48, 1280, 620))
+        bar0 = await find('saffron', (16, 20, 1280, 36))
         await hold(STD['cross'], 0.3); await hold(STD['cross'], 0.3)
         await asyncio.sleep(0.3)
-        bar1 = await find('saffron', (8, 6, 640, 22))
+        bar1 = await find('saffron', (16, 20, 1280, 36))
         check('game responds: held D-pad moves the box, CROSS raises the score bar', b1 and b2 and b2['n'] and b2['x'] > b1['x'] + 20 and b2['y'] > b1['y'] + 10
               and bar0 and bar1 and bar1['n'] > bar0['n'], f"box ({b1 and round(b1.get('x', 0))},{b1 and round(b1.get('y', 0))}) → ({b2 and round(b2.get('x', 0))},{b2 and round(b2.get('y', 0))}); score bar px {bar0 and bar0['n']} → {bar1 and bar1['n']}")
-        sc0 = await find('white', (60, 300, 220, 370))
+        sc0 = await find('white', (100, 470, 300, 600))
         await page.evaluate('window.__axis(0, 1)')                    # left stick full right
         await asyncio.sleep(0.8)
-        sc1 = await find('white', (60, 300, 220, 370))
+        sc1 = await find('white', (100, 470, 300, 600))
         await page.evaluate('window.__axis(0, 0); window.__axis(3, -1)')   # right stick up
         await asyncio.sleep(0.8)
-        rs = await find('violet', (440, 280, 620, 380))
+        rs = await find('violet', (900, 470, 1100, 600))
         await page.evaluate('window.__axis(3, 0)')
         await asyncio.sleep(0.8)
-        rs0 = await find('violet', (440, 280, 620, 380))
+        rs0 = await find('violet', (900, 470, 1100, 600))
         check('analog sticks reach the game (left stick → LX marker right, right stick → RY marker up)',
               sc0 and sc1 and sc1['n'] and sc1['x'] > sc0['x'] + 20 and rs and rs0 and rs['n'] and rs['y'] < rs0['y'] - 20,
               f"LX {sc0 and round(sc0.get('x', 0))}→{sc1 and round(sc1.get('x', 0))}, RY {rs0 and round(rs0.get('y', 0))}→{rs and round(rs.get('y', 0))}")
@@ -344,7 +344,7 @@ async def main():
                             'networkRttMs': round(pair['currentRoundTripTime'] * 1000, 1) if pair.get('currentRoundTripTime') is not None else None,
                             'jitterBufferMs': round(vi['jitterBufferDelay'] / vi['jitterBufferEmittedCount'] * 1000, 1) if vi.get('jitterBufferEmittedCount') else None,
                             'framesDecoded': vi.get('framesDecoded'), 'framesDropped': vi.get('framesDropped'), 'packetsLost': vi.get('packetsLost'),
-                            'pcsx2Window': (live.get('windows') or [''])[0][:120]}
+                            'rpcs3Window': next((w for w in (live.get('windows') or []) if 'FPS' in w), '')[:120]}
         acodec = stats.get('c_' + au.get('codecId', ''), '')
         # decode the received audio track in the page (WebAudio) and measure it: level + dominant frequency
         tone = await page.evaluate("""(async () => { const pc = window.__pcs[window.__pcs.length - 1];
@@ -359,22 +359,22 @@ async def main():
         metrics['audio'] = {'codec': acodec, 'packets': au.get('packetsReceived'), 'decodedRms': tone and round(tone['rms'], 4), 'peakHz': tone and tone['peakHz']}
         check('video stream metrics (resolution, fps, encoder, encode latency, RTT, dropped frames)', vi.get('framesDecoded', 0) > 60 and sm.get('encodeMs') is not None,
               json.dumps(metrics['video'])[:260])
-        check('audio: the ROM\'s 857 Hz SPU2 tone (PCSX2 SPU2-X → session PulseAudio → Opus → WebRTC) decoded in the browser',
-              au.get('packetsReceived', 0) > 50 and acodec == 'audio/opus' and tone and tone['rms'] > 0.005 and 780 < tone['peakHz'] < 940, metrics['audio'])
+        check('audio: the program\'s 750 Hz cellAudio tone (RPCS3 → Cubeb → session PulseAudio → Opus → WebRTC) decoded in the browser',
+              au.get('packetsReceived', 0) > 50 and acodec == 'audio/opus' and tone and tone['rms'] > 0.005 and 680 < tone['peakHz'] < 820, metrics['audio'])
 
-        # ================= save → exit (graceful PCSX2 shutdown flushes the memory card) → restore =================
-        saved_box = await find('saffron', (0, 30, 640, 400))
+        # ================= save (cellFs, user save-data area) → exit → restore =================
+        saved_box = await find('saffron', (0, 48, 1280, 620))
         await hold(STD['start'], 0.5)
-        done = await wait_px((616, 16), GREEN, 15)
-        check('START saves to the emulated memory card (ROM reports DONE)', done, f'box at {saved_box}')
+        done = await wait_px((1232, 32), GREEN, 15)
+        check('START saves through cellFs to /dev_hdd0/home/00000001/savedata (program reports DONE)', done, f'box at {saved_box}')
         await page.click('#player .ovl-btn')
         te = time.time()
         await page.click('#player [data-p=exit]')
         gone = wait_for(lambda: api('GET', f'/api/session/{sid}')[0] == 404 and no_leftovers(sid), 60)
         timings['shutdownMs'] = round((time.time() - te) * 1000)
-        check('clean termination: PCSX2 closed, sandbox/mounts removed', gone, f"{timings['shutdownMs']} ms")
-        wlog = open(f'{TMP}/ps2-real.log').read()
-        check('final save captured the flushed memory card after the graceful close', re.search(r'ending: [^\n]*\n(?:.*\n)*?.*auto save [0-9a-f]{12} \d+ B', wlog), (re.findall(r'auto save [0-9a-f]{12} \d+ B[^\n]*', wlog) or [''])[-1])
+        check('clean termination: RPCS3 closed, sandbox/mounts removed', gone, f"{timings['shutdownMs']} ms")
+        wlog = open(f'{TMP}/ps3-real.log').read()
+        check('final save captured the save data into the cloud save layer', re.search(r'ending: [^\n]*\n(?:.*\n)*?.*auto save [0-9a-f]{12} \d+ B', wlog), (re.findall(r'auto save [0-9a-f]{12} \d+ B[^\n]*', wlog) or [''])[-1])
         await page.wait_for_timeout(1500)
         tp2, (tc2, sid2) = await play()
         await wait_js("(() => { const v = document.querySelector('#player video'); return v && v.videoWidth > 0 && v.currentTime > 0; })()", timeout=30000)
@@ -382,37 +382,29 @@ async def main():
             if await page.evaluate('window.__cal()'):
                 break
             await asyncio.sleep(0.1)
-        loaded = await wait_px((592, 16), GREEN, 40)
+        loaded = await wait_px((1184, 32), GREEN, 60)
         timings['restartToRestoredMs'] = round((time.time() - tp2) * 1000)
-        rb = await find('saffron', (0, 30, 640, 400))
-        check('restart restores the save: memory card loaded, box position equals the saved one',
+        rb = await find('saffron', (0, 48, 1280, 620))
+        check('restart restores the save: save data loaded, box position equals the saved one',
               loaded and rb and saved_box and abs(rb['x'] - saved_box['x']) < 6 and abs(rb['y'] - saved_box['y']) < 6, f'saved {saved_box} → restored {rb}')
         await page.click('#player .ovl-btn')
         await page.click('#player [data-p=exit]')
         check('second session ends cleanly', wait_for(lambda: no_leftovers(sid2), 60))
 
-        # ================= container formats are validated against the deployed emulator, not assumed =================
-        await boot('#/upload')
-        await page.set_input_files('input[data-files]', os.path.join(ROOT, 'emulators', 'p1', 'testgame', 'fixtures', 'p2-layout.chd'))
-        await page.wait_for_selector('.emu-card[data-runtime="ps2"]', timeout=15000)
-        refused = await page.query_selector('[data-format-refused]')
-        check('CHD detected as PS2-class but refused: PCSX2 1.6 on this cloud reads ISO/BIN only (convert hint shown)',
-              refused and await page.locator('.emu-card .actions button').last.is_disabled(), (await refused.text_content())[:120] if refused else '')
-
-        # ================= no BIOS anywhere → console shows the setup screen, Play is refused =================
-        procs['ps2-real'].send_signal(signal.SIGTERM)
-        procs['ps2-real'].wait(60)
-        wait_for(lambda: 'ps2-real' not in workers(), 30)
+        # ================= no firmware anywhere → console shows the setup screen, Play is refused =================
+        procs['ps3-real'].send_signal(signal.SIGTERM)
+        procs['ps3-real'].wait(60)
+        wait_for(lambda: 'ps3-real' not in workers(), 30)
         await boot('#/emulators')
-        await wait_js("document.querySelector('.rt-row[data-rt=\"ps2\"]')?.dataset.state === 'firmware-required'", timeout=30000)
-        setup = await page.text_content('[data-setup="ps2"]')
-        check('only a BIOS-less PCSX2 worker: "PS2 BIOS required" setup screen (what to provide, how, nothing downloaded)',
-              'PS2 BIOS' in setup and 'own console' in setup and 'setup.py' in setup and 'does not download' in setup, setup[:160])
+        await wait_js("document.querySelector('.rt-row[data-rt=\"ps3-cloud\"]')?.dataset.state === 'firmware-required'", timeout=30000)
+        setup = await page.text_content('[data-setup="ps3-cloud"]')
+        check('only a firmware-less RPCS3 worker: "PS3 system software required" setup screen (what to provide, how, nothing downloaded)',
+              'PS3 system software' in setup and 'own console' in setup and 'setup.py' in setup and 'does not download' in setup, setup[:160])
         await boot('#/upload')
-        await page.set_input_files('input[data-files]', DISC)
-        await page.wait_for_selector('.emu-card[data-runtime="ps2"]', timeout=15000)
+        await page.set_input_files('input[data-dir]', GAME)
+        await page.wait_for_selector('.emu-card[data-runtime="ps3-cloud"]', timeout=15000)
         dis = await page.locator('.emu-card .actions button').last.is_disabled()
-        check('upload/play refused while the BIOS is missing (no fake session)', dis and await page.query_selector('.emu-card [data-setup="ps2"]'))
+        check('upload/play refused while the firmware is missing (no fake session)', dis and await page.query_selector('.emu-card [data-setup="ps3-cloud"]'))
         check('no uncaught console errors', not errors, errors[:3])
         await browser.close()
 
@@ -433,9 +425,9 @@ finally:
         except Exception:
             p.kill()
 failed = [r for r in results if not r[1]]
-report = {'suite': 'REAL_EMULATOR_TEST ps2', 'emulator': 'PCSX2 1.6.0', 'image': 'Mishrin test ROM + Mishrin test disc (original)',
+report = {'suite': 'REAL_EMULATOR_TEST ps3', 'emulator': 'RPCS3 0.0.43 (source build)', 'image': 'Mishrin PS3 test program (original, HLE test mode)',
           'passed': len(results) - len(failed), 'total': len(results), 'results': results, 'timings': timings, 'metrics': metrics}
-json.dump(report, open(os.path.join(os.path.dirname(__file__), 'report-ps2.json'), 'w'), indent=1)
+json.dump(report, open(os.path.join(os.path.dirname(__file__), 'report-ps3.json'), 'w'), indent=1)
 print(json.dumps({'timings': timings, 'metrics': metrics}, indent=1))
-print(f'\n{len(results) - len(failed)}/{len(results)} REAL_EMULATOR_TEST (PS2) checks passed')
+print(f'\n{len(results) - len(failed)}/{len(results)} REAL_EMULATOR_TEST (PS3) checks passed')
 sys.exit(1 if failed else 0)

@@ -2,8 +2,8 @@
  "suite": "REAL_EMULATOR_TEST ps2",
  "emulator": "PCSX2 1.6.0",
  "image": "Mishrin test ROM + Mishrin test disc (original)",
- "passed": 23,
- "total": 23,
+ "passed": 24,
+ "total": 24,
  "results": [
   [
    "worker self-test: real PCSX2 booted the test ROM and rendered a frame before the worker registered",
@@ -86,6 +86,10 @@
    true
   ],
   [
+   "CHD detected as PS2-class but refused: PCSX2 1.6 on this cloud reads ISO/BIN only (convert hint shown)",
+   true
+  ],
+  [
    "only a BIOS-less PCSX2 worker: \"PS2 BIOS required\" setup screen (what to provide, how, nothing downloaded)",
    true
   ],
@@ -99,22 +103,22 @@
   ]
  ],
  "timings": {
-  "workerStartToRegisteredMs": 18054,
-  "selfTestEmulatorStartMs": 1322,
-  "selfTestFirstFrameMs": 1332,
-  "uploadMs": 216,
-  "allocationAndLaunchMs": 6246,
-  "firstFrameBrowserMs": 6446,
-  "gameLoadedBrowserMs": 6533,
+  "workerStartToRegisteredMs": 19652,
+  "selfTestEmulatorStartMs": 1324,
+  "selfTestFirstFrameMs": 1337,
+  "uploadMs": 200,
+  "allocationAndLaunchMs": 6469,
+  "firstFrameBrowserMs": 6920,
+  "gameLoadedBrowserMs": 6958,
   "worker": {
-   "layerMs": 32,
-   "sandboxMs": 318,
-   "emulatorWindowMs": 752,
-   "streamSetupMs": 2469,
-   "totalMs": 3588
+   "layerMs": 42,
+   "sandboxMs": 322,
+   "emulatorWindowMs": 755,
+   "streamSetupMs": 2659,
+   "totalMs": 3800
   },
-  "shutdownMs": 2164,
-  "restartToRestoredMs": 6463
+  "shutdownMs": 2207,
+  "restartToRestoredMs": 7222
  },
  "metrics": {
   "gsArea": {
@@ -126,150 +130,150 @@
   "buttonTrace": [
    [
     "up",
-    122,
+    225,
     [
      319,
-     192
+     176
     ]
    ],
    [
     "down",
-    228,
+    205,
     [
      318,
-     251
+     247
     ]
    ],
    [
     "left",
-    770,
+    209,
     [
-     283,
+     288,
      252
     ]
    ],
    [
     "right",
-    217,
+    203,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "cross",
-    884,
+    244,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "circle",
-    210,
+    123,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "square",
-    167,
+    101,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "triangle",
-    210,
+    144,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "l1",
-    243,
+    179,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "r1",
-    312,
+    173,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "l2",
-    271,
+    261,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "r2",
-    231,
+    233,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "select",
-    264,
+    282,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "l3",
-    175,
+    208,
     [
-     328,
+     343,
      252
     ]
    ],
    [
     "r3",
-    205,
+    251,
     [
-     328,
+     343,
      252
     ]
    ]
   ],
   "inputRoundTripMs": {
-   "median": 228,
-   "min": 122,
-   "max": 884,
+   "median": 208,
+   "min": 101,
+   "max": 282,
    "n": 15
   },
   "video": {
    "resolution": "640x480",
-   "browserFps": 50,
-   "workerFps": 52,
+   "browserFps": 39,
+   "workerFps": 11,
    "codec": "VP8",
    "encoder": "vp8enc",
    "hardwareEncoder": false,
-   "encodeMs": 13.8,
-   "networkRttMs": 1.0,
-   "jitterBufferMs": 40.2,
-   "framesDecoded": 858,
+   "encodeMs": 60,
+   "networkRttMs": 0,
+   "jitterBufferMs": 22.3,
+   "framesDecoded": 719,
    "framesDropped": 0,
    "packetsLost": 0,
-   "pcsx2Window": "Slot: 0 | Speed: 108% (64.99) | Unknown | Limiter: Normal | GSdx OGL HW | 640x448 | Automatic | Interlaced | EE:  25% | "
+   "pcsx2Window": "Slot: 0 | Speed:  92% (55.14) | Unknown | Limiter: Normal | GSdx OGL HW | 640x448 | Automatic | Interlaced | EE:  23% | "
   },
   "audio": {
    "codec": "audio/opus",
-   "packets": 2369,
-   "decodedRms": 0.0239,
+   "packets": 2172,
+   "decodedRms": 0.0242,
    "peakHz": 856
   }
  }

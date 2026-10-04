@@ -1,0 +1,14 @@
+{
+ "name": "rpcs3", "runtime": "ps3", "version": "0.0.43-46aee28 (source build: LLVM 19, Qt 6.8)",
+ "binary": "/usr/local/lib/mishrin-rpcs3/rpcs3",
+ "argv": ["{binary}", "--no-gui", "--fullscreen", "{boot}"],
+ "formats": ["iso", "bin"],
+ "env": { "QT_QPA_PLATFORM": "xcb", "LANG": "C.UTF-8", "QT_XCB_GL_INTEGRATION": "xcb_glx" },
+ "firmware": { "label": "PS3 system software", "required": [".config/rpcs3/dev_flash/sys/external/liblv2.sprx"], "hleTest": true,
+   "help": "The PS3 system software update file (PS3UPDAT.PUP) for your own console, installed by the operator: sudo python3 cloud/worker/emulators/rpcs3/setup.py /opt/mishrin/emulators/rpcs3 --pup <PS3UPDAT.PUP>. Mishrin never downloads or ships system software." },
+ "saves": [".config/rpcs3/dev_hdd0/home"],
+ "exclude": ["*/cache/*", "*/shaderlog/*", "*/ppu_progs/*", "*/spu_progs/*", "*.log", "*.buf", "*.gz"],
+ "focusTitle": "^FPS",
+ "maxFileMB": 65536,
+ "selfTest": { "argv": ["{binary}", "--no-gui", "--fullscreen", "/opt/emu/selftest/MSHR00001/PS3_GAME/USRDIR/EBOOT.BIN"], "title": "^FPS: [1-9]", "seconds": 180, "ram": 3072 }
+}

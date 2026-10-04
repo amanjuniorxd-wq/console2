@@ -31,7 +31,7 @@ class Session:
         self.offer, self.prefs, self.ice = msg['offer'], msg.get('prefs') or {}, msg.get('iceServers') or []
         self.restore_ref = msg.get('restore')
         self.display = display_num
-        self.sb = Sandbox(worker.cfg, self.id, display_num, self.req)
+        self.sb = Sandbox(worker.cfg, self.id, display_num, {**self.req, 'fileMB': int(getattr(self.profile, 'spec', {}).get('maxFileMB', 0))})
         self.state = 'preparing'
         self.started = time.time()
         self.restarts = 0
@@ -75,7 +75,8 @@ class Session:
         # MISHRIN_AUDIO=silence: diagnostic/headless mode — stream generated silence instead of the game's audio
         self.pulse = None if os.environ.get('MISHRIN_AUDIO') == 'silence' else self.sb.start_audio()
         from .inputx import Injector
-        self.inj = Injector(self.display, self.manifest['controllerMap'])
+        self.inj = Injector(self.display, self.manifest['controllerMap'], getattr(self.profile, 'spec', {}).get('focusTitle'),
+                            autorepeat=self.profile.kind != 'emulator')
         self.timings['sandboxMs'] = ms(t0) - self.timings['layerMs']
         self._launch_game()
         self._wait_window(cfg.window_timeout)
