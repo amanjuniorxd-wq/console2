@@ -133,17 +133,18 @@ export async function addEmuGame(det: import('../emu/detect').Detection, progres
 }
 
 /** A console game the player uploaded to their own cloud: the library keeps only a reference (url "upload:<id>"). */
-export async function addCloudGame(r: { id: string; platform: string; title: string; serial?: string }, det: { files: File[]; paths: string[]; size: number; format?: string; title?: string }): Promise<Game> {
+export async function addCloudGame(r: { id: string; platform: string; title: string; serial?: string; executable?: string; files?: number }, det: { files: File[]; paths: string[]; size: number; format?: string; title?: string }): Promise<Game> {
   const runtime = ({ ps2: 'p2', ps3: 'p3', windows: 'x64-win' } as Record<string, RuntimeKind>)[r.platform];
   if (!runtime) throw new Error(`The cloud detected an unsupported platform (${r.platform}).`);
   const t = (r.title || det.title || 'Untitled').slice(0, 80);
   let id = `c-${slug(t)}`;
   for (let i = 2; byId(id); i++) id = `c-${slug(t)}-${i}`;
-  const platform = runtime === 'p2' ? 'p2' : 'p3';
   const g: Game = {
-    id, title: t, artwork: runtime === 'p2' ? 'gen:action' : 'gen:scifi', runtime, url: `upload:${r.id}`, user: true, controller: true, touch: true, requirements: {}, launchConfig: {},
-    description: `Uploaded by you to your cloud${r.serial ? ` (${r.serial})` : ''}. Streams from a cloud worker.`,
-    emu: { platform, format: det.format || 'upload', primary: det.paths[0] || '', files: det.files.map((f, i) => ({ name: det.paths[i] || f.name, size: f.size })), size: det.size, serial: r.serial, store: 'cloud' },
+    id, title: t, artwork: runtime === 'p2' ? 'gen:action' : runtime === 'p3' ? 'gen:scifi' : 'gen:landscape',
+    runtime, url: `upload:${r.id}`, user: true, controller: true, touch: true, requirements: {},
+    description: runtime === 'x64-win'
+      ? `Uploaded by you to your cloud · ${r.files || det.files.length} files · launches ${r.executable || 'the detected EXE'}.`
+      : `Uploaded by you to your cloud${r.serial ? ` (${r.serial})` : ''}. Streams from a cloud worker.`,
   };
   await idb.put('games', id, g);
   await loadCatalog();
