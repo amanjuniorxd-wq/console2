@@ -75,4 +75,34 @@ export async function upload(files: UploadFile[], opts: { title?: string; signal
   const c = await call(`/api/uploads/${d.id}/complete`, { method: 'POST', body: '{}', signal: opts.signal });
   return { id: c.id, platform: c.platform, runtime: c.runtime, title: c.title, serial: c.serial, executable: c.executable, files: c.files };
 }
-\n/** Expand a Windows game folder or ZIP into relative-path files for the cloud uploader. */\nexport async function expandGameFiles(input: FileList | File[]): Promise<UploadFile[]> {\n  const selected = Array.from(input || []);\n  if (!selected.length) throw new Error('Choose a Windows game folder or ZIP file.');\n  const zips = selected.filter(f => /\.zip$/i.test(f.name));\n  if (zips.length > 1 || (zips.length && selected.length > 1)) throw new Error('Choose one ZIP file, or select a game folder — not both.');\n  if (zips.length === 1) {\n    const zip = zips[0];\n    const raw = new Uint8Array(await zip.arrayBuffer());\n    let entries: Record<string, Uint8Array>;\n    try { entries = unzipSync(raw); } catch { throw new Error('The ZIP file could not be opened.'); }\n    const out: UploadFile[] = [];\n    for (const [name, bytes] of Object.entries(entries)) {\n      const path = name.replaceAll('\\\\', '/').replace(/^\\/+/, '');\n      if (!path || path.endsWith('/') || path.startsWith('__MACOSX/')) continue;\n      const parts = path.split('/');\n      if (parts.some(p => !p || p === '.' || p === '..')) continue;\n      out.push({ path, blob: new File([bytes], parts[parts.length - 1] || 'file') });\n    }\n    if (!out.length) throw new Error('The ZIP contains no usable files.');\n    return out;\n  }\n  const out = selected.map((f, i) => {\n    const path = String((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name || `file-${i}`);\n    return { path: path.replaceAll('\\\\', '/'), blob: f };\n  }).filter(f => f.path && !f.path.endsWith('/'));\n  if (!out.length) throw new Error('The selected folder contains no files.');\n  return out;\n}\n
+
+
+/** Expand a Windows game folder or ZIP into relative-path files for the cloud uploader. */
+export async function expandGameFiles(input: FileList | File[]): Promise<UploadFile[]> {
+  const selected = Array.from(input || []);
+  if (!selected.length) throw new Error('Choose a Windows game folder or ZIP file.');
+  const zips = selected.filter(f => /\.zip$/i.test(f.name));
+  if (zips.length > 1 || (zips.length && selected.length > 1)) throw new Error('Choose one ZIP file, or select a game folder — not both.');
+  if (zips.length === 1) {
+    const zip = zips[0];
+    const raw = new Uint8Array(await zip.arrayBuffer());
+    let entries: Record<string, Uint8Array>;
+    try { entries = unzipSync(raw); } catch { throw new Error('The ZIP file could not be opened.'); }
+    const out: UploadFile[] = [];
+    for (const [name, bytes] of Object.entries(entries)) {
+      const path = name.replaceAll('\\\\', '/').replace(/^\\/+/, '');
+      if (!path || path.endsWith('/') || path.startsWith('__MACOSX/')) continue;
+      const parts = path.split('/');
+      if (parts.some(p => !p || p === '.' || p === '..')) continue;
+      out.push({ path, blob: new File([bytes], parts[parts.length - 1] || 'file') });
+    }
+    if (!out.length) throw new Error('The ZIP contains no usable files.');
+    return out;
+  }
+  const out = selected.map((f, i) => {
+    const path = String((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name || `file-${i}`);
+    return { path: path.replaceAll('\\\\', '/'), blob: f };
+  }).filter(f => f.path && !f.path.endsWith('/'));
+  if (!out.length) throw new Error('The selected folder contains no files.');
+  return out;
+}
