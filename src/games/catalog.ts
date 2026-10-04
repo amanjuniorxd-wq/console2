@@ -143,7 +143,7 @@ export async function addCloudGame(r: { id: string; platform: string; title: str
     id, title: t, artwork: runtime === 'p2' ? 'gen:action' : runtime === 'p3' ? 'gen:scifi' : 'gen:landscape',
     runtime, url: `upload:${r.id}`, user: true, controller: true, touch: true, requirements: {},
     description: runtime === 'x64-win'
-      ? `Uploaded by you to your cloud · ${r.files || det.files.length} files · launches ${r.executable || 'the detected EXE'}.`
+      ? `Uploaded by you to your cloud · ${r.files || det.files.length} files · launches ${r.executable === '__AUTO__' ? 'an automatically detected EXE' : (r.executable || 'the detected EXE')}.`
       : `Uploaded by you to your cloud${r.serial ? ` (${r.serial})` : ''}. Streams from a cloud worker.`,
   };
   await idb.put('games', id, g);
