@@ -388,15 +388,16 @@ function completeUpload(u) {
   const title = (u.title || info.title || 'Uploaded game').slice(0, 80);
   const mid = `up-${u.id.slice(0, 20)}`;
   const manifest = info.platform === 'windows'
-    ? (u.files.length === 1
-      ? validateManifest({ id: mid, title, type: 'windows', runtime: 'wine', executable: 'game.exe', files: [{ ...u.files[0], path: 'game.exe' }], arch: info.arch, network: false, graphics: 'auto', requirements: { ram: 2048, gpu: true, maxMinutes: 240 } })
-      : null)
+    ? validateManifest({
+        id: mid, title, type: 'windows', runtime: 'wine',
+        executable: info.executable, files: u.files, arch: info.arch, network: false, graphics: 'auto',
+        requirements: { ram: 2048, gpu: true, maxMinutes: 240 }
+      })
     : validateManifest({ id: mid, title, type: 'emulator', platform: info.platform, boot: info.boot, files: u.files, network: false, ...(UPLOAD_DEFAULTS[info.platform] ? { requirements: UPLOAD_DEFAULTS[info.platform] } : {}), ...(PLATFORM_DISPLAY[info.platform] ? { display: PLATFORM_DISPLAY[info.platform] } : {}) });
-  if (!manifest) return [422, { error: 'Upload a single Windows .exe.' }];
   const rec = { id: u.id, owner: u.owner, manifest, platform: info.platform, runtime: runtimeOf(manifest), title, serial: info.serial || '', created: Date.now() };
   uploads.set(u.id, rec); pendingUploads.delete(u.id); persistUploads();
   log(`upload ${u.id.slice(0, 8)} complete: ${info.platform} "${title}" (${u.files.length} files)`);
-  return [201, { id: u.id, platform: info.platform, runtime: rec.runtime, title, serial: rec.serial, manifestHash: manifestHash(manifest) }];
+  return [201, { id: u.id, platform: info.platform, runtime: rec.runtime, title, serial: rec.serial, executable: info.executable || '', files: u.files.length, manifestHash: manifestHash(manifest) }];
 }
 
 const server = http.createServer(async (req, res) => {
@@ -437,7 +438,7 @@ const server = http.createServer(async (req, res) => {
       if (auth.required && !owner) return send(res, 401, { error: 'Sign-in required (device token).' });
       const files = uploadFiles(b.files);
       const id = uploadId(owner, files);
-      if (uploads.has(id)) { const u = uploads.get(id); return send(res, 200, { id, state: 'complete', missing: [], platform: u.platform, runtime: u.runtime, title: u.title }); }
+      if (uploads.has(id)) { const u = uploads.get(id); return send(res, 200, { id, state: 'complete', missing: [], platform: u.platform, runtime: u.runtime, title: u.title, executable: u.manifest?.executable || '', files: u.manifest?.files?.length || 0 }); }
       if (!pendingUploads.has(id)) pendingUploads.set(id, { id, owner, files, title: typeof b.title === 'string' ? b.title.slice(0, 80) : '', created: Date.now() });
       const missing = missingChunks(files);
       return send(res, 200, { id, state: 'pending', chunkSize: CHUNK, missing, total: new Set(files.flatMap(f => f.chunks)).size });
@@ -452,7 +453,7 @@ const server = http.createServer(async (req, res) => {
         store.put(m[3], await readBody(req, CHUNK + 1));
         return send(res, 201, { stored: true });
       }
-      if (m[4] && req.method === 'POST') { if (uploads.has(m[1])) return send(res, 200, { id: m[1], platform: u.platform, runtime: u.runtime, title: u.title }); const [c, body] = completeUpload(u); return send(res, c, body); }
+      if (m[4] && req.method === 'POST') { if (uploads.has(m[1])) return send(res, 200, { id: m[1], platform: u.platform, runtime: u.runtime, title: u.title, executable: u.manifest?.executable || '', files: u.manifest?.files?.length || 0 }); const [c, body] = completeUpload(u); return send(res, c, body); }
       if (!m[2] && !m[4] && req.method === 'GET') return uploads.has(m[1]) ? send(res, 200, { id: m[1], state: 'complete', platform: u.platform, runtime: u.runtime, title: u.title }) : send(res, 200, { id: m[1], state: 'pending', missing: missingChunks(u.files) });
       return send(res, 405, { error: 'Method not allowed' });
     }
